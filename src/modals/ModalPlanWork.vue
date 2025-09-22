@@ -57,6 +57,7 @@
             :required="true"
           />
 
+          <!-- CoordinateInputs с привязкой к границам объекта -->
           <CoordinateInputs
             class="col-span-2"
             v-model="object.coordinates"
@@ -132,7 +133,7 @@ const createNewObjectForm = () => ({
     coordEndKm: null,
     coordEndPk: null
   },
-  objectBounds: null,
+  objectBounds: null, // <-- Добавлено: границы объекта для валидации
 
   placeOptions: [],
   objectTypeOptions: [],
@@ -160,61 +161,16 @@ const closeModal = () => {
   emit('close')
 }
 
+const isSaving = ref(false)
+
 const saveData = async () => {
+  if (isSaving.value) return; // Предотвращаем повторные вызовы
+  
+  isSaving.value = true
   try {
     if (!form.value.work) {
       notificationStore.showNotification('Не выбрана работа', 'error')
       return
-    }
-
-    for (let i = 0; i < form.value.objects.length; i++) {
-      const obj = form.value.objects[i]
-      const objectNumber = i + 1
-
-      if (!obj.place) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не выбрано место`, 'error')
-        return
-      }
-
-      if (!obj.objectType) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не выбран тип объекта`, 'error')
-        return
-      }
-
-      if (!obj.object) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не выбран объект`, 'error')
-        return
-      }
-
-      if (!obj.section) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не выбран участок`, 'error')
-        return
-      }
-
-      if (!obj.plannedDate) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не указан плановый срок завершения`, 'error')
-        return
-      }
-
-      if (!obj.coordinates.coordStartKm && obj.coordinates.coordStartKm !== 0) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не указано начальное значение км`, 'error')
-        return
-      }
-
-      if (!obj.coordinates.coordStartPk && obj.coordinates.coordStartPk !== 0) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не указано начальное значение пк`, 'error')
-        return
-      }
-
-      if (!obj.coordinates.coordEndKm && obj.coordinates.coordEndKm !== 0) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не указано конечное значение км`, 'error')
-        return
-      }
-
-      if (!obj.coordinates.coordEndPk && obj.coordinates.coordEndPk !== 0) {
-        notificationStore.showNotification(`Объект #${objectNumber}: Не указано конечное значение пк`, 'error')
-        return
-      }
     }
 
     const workData = {
@@ -231,11 +187,13 @@ const saveData = async () => {
         fullRecord: obj.section.fullRecord
       } : null
 
+      // Синхронизируем координаты из v-model
       obj.coordStartKm = obj.coordinates.coordStartKm
       obj.coordStartPk = obj.coordinates.coordStartPk
       obj.coordEndKm = obj.coordinates.coordEndKm
       obj.coordEndPk = obj.coordinates.coordEndPk
 
+      // Проверка валидности перед сохранением (дублируем логику из CoordinateInputs)
       const startAbs = (obj.coordStartKm || 0) * 1000 + (obj.coordStartPk || 0) * 100
       const endAbs = (obj.coordEndKm || 0) * 1000 + (obj.coordEndPk || 0) * 100
 
@@ -281,6 +239,8 @@ const saveData = async () => {
   } catch (e) {
     console.error('Ошибка при сохранении:', e)
     notificationStore.showNotification('Ошибка при сохранении: ' + (e.message || 'неизвестная ошибка'), 'error')
+  } finally {
+    isSaving.value = false
   }
 }
 
@@ -338,7 +298,7 @@ const onWorkChange = async (selectedWorkId) => {
     objectForm.object = null
     objectForm.section = null
     objectForm.coordinates = { coordStartKm: null, coordStartPk: null, coordEndKm: null, coordEndPk: null }
-    objectForm.objectBounds = null
+    objectForm.objectBounds = null // <-- Сброс границ
     objectForm.objectTypeOptions = []
     objectForm.objectOptions = []
     objectForm.sectionOptions = []
@@ -434,6 +394,7 @@ const onObjectChange = async (selectedObjectId, index) => {
 
   const full = record.fullRecord
 
+  // Заполняем координаты
   objectForm.coordinates = {
     coordStartKm: full.StartKm ?? 0,
     coordStartPk: full.StartPicket ?? 0,
@@ -441,6 +402,7 @@ const onObjectChange = async (selectedObjectId, index) => {
     coordEndPk: full.FinishPicket ?? 0
   }
 
+  // Устанавливаем границы объекта для валидации
   objectForm.objectBounds = {
     startAbs: (full.StartKm || 0) * 1000 + (full.StartPicket || 0) * 100,
     endAbs: (full.FinishKm || 0) * 1000 + (full.FinishPicket || 0) * 100,

@@ -1,29 +1,28 @@
 <template>
   <TableWrapper
     ref="tableWrapperRef"
-    title="Журнал осмотров и проверок"
+    title="Журнал неисправностей"
     :columns="columns"
     :actions="tableActions"
     :limit="limit"
-    :loadFn="loadInspectionsWrapper"
+    :loadFn="loadFaultsWrapper"
     :datePickerConfig="datePickerConfig"
     :dropdownConfig="dropdownConfig"
     :showFilters="true"
     :filters="filters"
     @update:filters="filters = $event"
     @row-dblclick="onRowDoubleClick"
-  />
+  >
+    <template #modals="{ selectedRow, showEditModal, closeModals }">
+      </template>
+  </TableWrapper>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
 import TableWrapper from '@/components/layout/Table/TableWrapper.vue';
-import { loadInspections } from '@/api/inspectionApi';
+import { loadFaults } from '@/api/faultApi';
 import { loadPeriodTypes } from '@/api/periodApi';
-import WorkStatus from '../components/ui/WorkStatus.vue';
-
-const router = useRouter();
 
 const limit = 10;
 const tableWrapperRef = ref(null);
@@ -63,6 +62,12 @@ onMounted(async () => {
   }
 });
 
+const handleTableUpdate = () => {
+  if (tableWrapperRef.value && tableWrapperRef.value.refreshTable) {
+    tableWrapperRef.value.refreshTable();
+  }
+};
+
 const formatDateToString = (date) => {
   if (!date) return null;
   const d = new Date(date);
@@ -72,7 +77,7 @@ const formatDateToString = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-const loadInspectionsWrapper = async ({ page, limit, filters: filterValues }) => {
+const loadFaultsWrapper = async ({ page, limit, filters: filterValues }) => {
   try {
     const objLocation = localStorage.getItem('objLocation');
     if (!objLocation) {
@@ -82,32 +87,25 @@ const loadInspectionsWrapper = async ({ page, limit, filters: filterValues }) =>
     const selectedDate = filterValues.date ? formatDateToString(filterValues.date) : formatDateToString(new Date());
     const periodTypeId = filterValues.periodType?.value ?? 41;
 
-    const records = await loadInspections(selectedDate, periodTypeId);
+    const records = await loadFaults(selectedDate, periodTypeId);
     const totalRecords = records.length;
     const start = (page - 1) * limit;
     const end = page * limit;
 
     const sliced = records.slice(start, end).map((r, index) => ({
       index: start + index + 1,
-      work: r.fullNameWork,
-      name: r.nameLocationClsSection,
-      location: r.nameSection,
-      object: r.fullNameObject,
+
+      nameSection: r.nameSection,
+      nameDefect: r.nameDefect,
+      nameObject: r.nameObject,
       coordinates: `${r.StartKm} км ${r.StartPicket} пк - ${r.FinishKm} км ${r.FinishPicket} пк`,
-      planDate: r.PlanDateEnd,
-      factDate: r.FactDateEnd,
-      inspector: r.fullNameUser,
-      deviation: r.nameDeviationDefect,
-      reason: r.ReasonDeviation,
+      CreationDateTime: r.CreationDateTime,
+      FactDateEnd: r.FactDateEnd,
+      Description: r.Description,
+      nameDefectsComponent: r.nameDefectsComponent,
+      nameDefectsCategory: r.nameDefectsCategory,
+      nameLocationClsSection: r.nameLocationClsSection,
       rawData: r,
-      objWork: r.objWork,
-      objObject: r.objObject,
-      status: {
-        showCheck: r.ActualDateEnd !== '0000-01-01',
-        showMinus: r.ActualDateEnd === '0000-01-01',
-        showHammer: r.nameFlagDefect === 'да',
-        showRuler: r.nameFlagParameter === 'да',
-      },
     }));
 
     return {
@@ -115,39 +113,34 @@ const loadInspectionsWrapper = async ({ page, limit, filters: filterValues }) =>
       data: sliced,
     };
   } catch (e) {
-    console.error('Ошибка при загрузке данных инспекций:', e);
+    console.error('Ошибка при загрузке данных:', e);
     return { total: 0, data: [] };
   }
 };
 
 const onRowDoubleClick = (row) => {
-  console.log('Двойной клик по записи:', row);
+  console.log('Двойной клик по строке:', row);
 };
 
 const columns = [
   { key: 'index', label: '№' },
-  { key: 'work', label: 'Наименование работы' },
-  { key: 'name', label: 'Участок' },
-  { key: 'location', label: 'Место' },
-  { key: 'object', label: 'Объект' },
+  { key: 'FactDateEnd', label: 'Дата проверки' },
+  { key: 'nameSection', label: 'Участок' },
+  { key: 'nameLocationClsSection', label: 'Место' },
+  { key: 'nameObject', label: 'Объект' },
   { key: 'coordinates', label: 'Координаты' },
-  { key: 'planDate', label: 'Плановая дата' },
-  { key: 'factDate', label: 'Фактическая дата' },
-  { key: 'status', label: 'Статус работы', component: WorkStatus,}
+  { key: 'nameDefectsComponent', label: 'Компонент' },
+  { key: 'nameDefect', label: 'Неисправность' },
+  { key: 'Description', label: 'Примечание' },
+  { key: 'nameDefectsCategory', label: 'Категория' },
+  { key: 'CreationDateTime', label: 'Время создания записи' },
 ];
 
 const tableActions = [
   {
-    label: 'Добавить запись',
-    icon: 'Plus',
-    onClick: () => {
-      router.push({ name: 'InspectionRecord' });
-    },
-  },
-  {
     label: 'Экспорт',
     icon: 'Download',
-    onClick: () => console.log('Экспортирование инспекций...'),
-  },
+    onClick: () => console.log('Экспортирование...'),
+  }
 ];
 </script>

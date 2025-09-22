@@ -6,6 +6,7 @@
           <th v-for="col in columns" :key="col.key" class="header-cell-container">
             <div class="header-cell">
               <span>{{ col.label }}</span>
+              <!-- Показываем кнопку фильтра ТОЛЬКО если showFilters === true -->
               <button 
                 v-if="showFilters"
                 @click.stop="$emit('toggle-filter', col.key)" 
@@ -23,16 +24,16 @@
         </tr>
       </thead>
       <tbody>
-        <tr 
-          v-for="row in rows" 
+        <TableRow
+          v-for="row in rows"
           :key="row.id || row.index"
-          @dblclick="$emit('row-dblclick', row)"
-          class="table-row"
-        >
-          <td v-for="col in columns" :key="col.key">
-            {{ row[col.key] }}
-          </td>
-        </tr>
+          :row="row"
+          :columns="columns"
+          :expandedRows="expandedRows"
+          :toggleRowExpand="toggleRowExpand"
+          :childrenMap="childrenMap"
+          @dblclick="$emit('row-dblclick', $event)"
+        />
         <tr v-if="!rows.length && !loading">
           <td :colspan="columns.length" class="empty">Нет данных</td>
         </tr>
@@ -45,6 +46,7 @@
 </template>
 
 <script setup>
+import TableRow from './TableRow.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
 const props = defineProps({
@@ -55,7 +57,7 @@ const props = defineProps({
   toggleRowExpand: Function,
   childrenMap: Object,
   activeFilters: Object,
-  showFilters: { 
+  showFilters: { // 👈 новый пропс
     type: Boolean,
     default: true
   }

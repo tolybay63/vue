@@ -1,5 +1,5 @@
 <template>
-  <ModalWrapper title="Карточка плановой работы" @close="closeModal">
+  <ModalWrapper title="Карточка осмотра/проверки" @close="closeModal">
     <div class="work-card-content">
       <WorkHeaderInfo :record="record" :section="section" :date="date" />
       <ExistingDataBlock :existingRecords="existingRecords" />
@@ -19,13 +19,13 @@
                   :objectBounds="objectBounds"
                 />
               </div>
-              <div class="input-row date-input-row">
+              <div class="form-grid">
                 <AppDatePicker
                   label="Дата"
                   placeholder="Выберите дату"
                   id="date-picker"
                   v-model="newRecord.date"
-                  class="date-picker"
+                  class="col-span-1"
                 />
               </div>
               <AppInput
@@ -58,13 +58,17 @@
                   v-model="defectRecord.component"
                   placeholder="Выберите компонент"
                   class="half-width"
+                  :loading="loadingComponents"
+                  @update:modelValue="handleDefectComponentChange"
                 />
-                <AppInput
+                <AppDropdown
                   label="Дефект / неисправность"
-                  id="defect-input"
+                  id="defect-dropdown"
+                  :options="defectOptions"
                   v-model="defectRecord.defectType"
-                  placeholder="Введите дефект"
+                  placeholder="Выберите дефект"
                   class="half-width"
+                  :loading="loadingDefects"
                 />
               </div>
               <AppInput
@@ -97,6 +101,8 @@
                   v-model="parameterRecord.component"
                   placeholder="Выберите компонент"
                   class="half-width"
+                  :loading="loadingComponents"
+                  @update:modelValue="handleParameterComponentChange"
                 />
                 <AppDropdown
                   label="Параметр"
@@ -105,8 +111,27 @@
                   v-model="parameterRecord.parameterType"
                   placeholder="Выберите параметр"
                   class="half-width"
+                  :loading="loadingParameters"
                 />
               </div>
+              
+              <div class="parameter-value-group">
+                <AppNumberInput
+                  label="Минимальное значение"
+                  id="min-parameter-value"
+                  v-model="parameterRecord.minValue"
+                  placeholder="Введите минимальное значение"
+                  class="half-width value-input"
+                />
+                <AppNumberInput
+                  label="Максимальное значение"
+                  id="max-parameter-value"
+                  v-model="parameterRecord.maxValue"
+                  placeholder="Введите максимальное значение"
+                  class="half-width value-input"
+                />
+              </div>
+
               <AppInput
                 label="Значение"
                 id="parameter-value"
@@ -144,10 +169,13 @@ import FullCoordinates from '@/components/ui/FormControls/FullCoordinates.vue';
 import AppDatePicker from '@/components/ui/FormControls/AppDatePicker.vue';
 import AppInput from '@/components/ui/FormControls/AppInput.vue';
 import AppDropdown from '@/components/ui/FormControls/AppDropdown.vue';
+import AppNumberInput from '@/components/ui/FormControls/AppNumberInput.vue';
 import TabsHeader from '@/components/ui/TabsHeader.vue';
 import WorkHeaderInfo from '@/components/ui/WorkHeaderInfo.vue';
 import ExistingDataBlock from '@/components/ui/ExistingDataBlock.vue';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { loadInspectionEntriesForWorkPlan, saveInspectionInfo, saveFaultInfo, fetchUserData, loadComponentsByTypObjectForSelect, loadDefectsByComponentForSelect, loadComponentParametersForSelect } from '@/api/inspectionsApi.js';
+import { formatDate, formatDateToISO } from '@/stores/date.js';
 
 const props = defineProps({
   record: {
@@ -162,6 +190,14 @@ const props = defineProps({
     type: String,
     default: null,
   },
+  sectionId: {
+    type: [Number, String],
+    default: null,
+  },
+  sectionPv: {
+    type: [Number, String],
+    default: null,
+  },
 });
 
 const emit = defineEmits(['close']);
@@ -169,10 +205,11 @@ const emit = defineEmits(['close']);
 const isSaving = ref(false);
 const activeTab = ref('info');
 const isInfoSaved = ref(false);
+const savedInspectionId = ref(null);
 
 const tabs = ref([
   { name: 'info', label: 'Новая информация по работе', icon: 'Info' },
-  { name: 'defects', label: 'Дефекты', icon: 'AlertTriangle' },
+  { name: 'defects', label: 'Неисправности', icon: 'AlertTriangle' },
   { name: 'parameters', label: 'Параметры', icon: 'SlidersHorizontal' },
 ]);
 
@@ -199,7 +236,7 @@ const defectRecord = ref({
     coordEndPk: null,
     coordEndZv: null,
   },
-  defectType: '',
+  defectType: null,
   note: '',
   component: null,
 });
@@ -214,32 +251,26 @@ const parameterRecord = ref({
   },
   component: null,
   parameterType: null,
+  minValue: null,
+  maxValue: null,
   value: '',
   note: '',
 });
 
-const existingRecords = ref([
-  { date: '03.04.2025', coordinates: '19км 3пк 0зв — 29км 10пк 0зв' },
-  { date: '03.04.2025', coordinates: '19км 3пк 0зв — 29км 10пк 0зв' },
-]);
+const existingRecords = ref([]);
 
-const componentOptions = ref([
-  { label: 'Рельс', value: 'Рельс' },
-  { label: 'Шпалы', value: 'Шпалы' },
-  { label: 'Стрелочный перевод', value: 'Стрелочный перевод' },
-]);
-
-const parameterOptions = ref([
-  { label: 'Вертикальный износ', value: 'Вертикальный износ' },
-  { label: 'Боковой износ', value: 'Боковой износ' },
-  { label: 'Прокат', value: 'Прокат' },
-]);
+const componentOptions = ref([]);
+const defectOptions = ref([]);
+const parameterOptions = ref([]);
+const loadingComponents = ref(false);
+const loadingDefects = ref(false);
+const loadingParameters = ref(false);
 
 const objectBounds = ref({
-  StartKm: 19,
-  StartPicket: 0,
-  FinishKm: 30,
-  FinishPicket: 0,
+  StartKm: null,
+  StartPicket: null,
+  FinishKm: null,
+  FinishPicket: null,
 });
 
 const closeModal = () => {
@@ -254,77 +285,323 @@ const handleTabChange = (newTab) => {
   activeTab.value = newTab;
 };
 
-const saveWork = () => {
-  isSaving.value = true;
-  let dataToSave;
+const saveWork = async () => {
+  if (isSaving.value) return;
+
   if (activeTab.value === 'info') {
-    dataToSave = newRecord.value;
-  } else if (activeTab.value === 'defects') {
-    dataToSave = defectRecord.value;
-  } else if (activeTab.value === 'parameters') {
-    dataToSave = parameterRecord.value;
-  }
-  console.log('Сохраняем данные:', dataToSave);
-  setTimeout(() => {
-    isSaving.value = false;
-    if (activeTab.value === 'info') {
+    isSaving.value = true;
+    try {
+      const user = await fetchUserData();
+
+      const formattedDate = formatDateToISO(newRecord.value.date);
+
+      const dataToSave = {
+        name: `${props.record.id}-${formattedDate}`,
+        objLocationClsSection: props.sectionId,
+        pvLocationClsSection: parseInt(props.sectionPv),
+        objWorkPlan: props.record.id,
+        pvWorkPlan: props.record.pv,
+        objUser: user.id,
+        pvUser: user.pv,
+        StartKm: newRecord.value.coordinates.coordStartKm,
+        FinishKm: newRecord.value.coordinates.coordEndKm,
+        StartPicket: newRecord.value.coordinates.coordStartPk,
+        FinishPicket: newRecord.value.coordinates.coordEndPk,
+        StartLink: newRecord.value.coordinates.coordStartZv,
+        FinishLink: newRecord.value.coordinates.coordEndZv,
+        FactDateEnd: formattedDate,
+        CreatedAt: new Date().toISOString().split('T')[0],
+        UpdatedAt: new Date().toISOString().split('T')[0],
+        ReasonDeviation: newRecord.value.deviationReason,
+      };
+
+      console.log('Payload for API call:', dataToSave);
+      const response = await saveInspectionInfo(dataToSave);
+      
+      // Сохраняем ID созданной записи инспекции
+      console.log('Response from saveInspectionInfo:', response);
+      if (response?.result?.id) {
+        savedInspectionId.value = response.result.id;
+      } else if (response?.id) {
+        savedInspectionId.value = response.id;
+      } else if (response?.result?.records?.[0]?.id) {
+        savedInspectionId.value = response.result.records[0].id;
+      }
+      
+      console.log('Saved inspection ID:', savedInspectionId.value);
+
+      notificationStore.showNotification('Информация по работе успешно сохранена!', 'success');
       isInfoSaved.value = true;
+      
+      const existingData = await loadExistingData(props.record);
+      
+      // Если ID не был получен из ответа API, попробуем найти его в загруженных данных
+      if (!savedInspectionId.value && existingData && existingData.length > 0) {
+        // Берем ID последней созданной записи
+        const lastRecord = existingData[existingData.length - 1];
+        if (lastRecord.id) {
+          savedInspectionId.value = lastRecord.id;
+          console.log('Inspection ID found in existing data:', savedInspectionId.value);
+        }
+      }
+      
+      const savedCoordinates = {
+        coordStartKm: newRecord.value.coordinates.coordStartKm,
+        coordStartPk: newRecord.value.coordinates.coordStartPk,
+        coordStartZv: newRecord.value.coordinates.coordStartZv,
+        coordEndKm: newRecord.value.coordinates.coordEndKm,
+        coordEndPk: newRecord.value.coordinates.coordEndPk,
+        coordEndZv: newRecord.value.coordinates.coordEndZv,
+      };
+      
+      defectRecord.value.startCoordinates = { ...savedCoordinates };
+      
+      parameterRecord.value.startCoordinates = { ...savedCoordinates };
+    } catch (error) {
+      console.error('Ошибка сохранения:', error);
+      
+      let errorMessage = 'Не удалось сохранить информацию по работе.';
+      
+      if (error.response?.data?.error?.message) {
+        errorMessage = error.response.data.error.message;
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Ошибка сервера. Попробуйте еще раз.';
+      }
+      
+      notificationStore.showNotification(errorMessage, 'error');
+    } finally {
+      isSaving.value = false;
     }
-  }, 1000);
+  } else if (activeTab.value === 'defects') {
+    // Валидация данных дефекта
+    if (!defectRecord.value.component || !defectRecord.value.defectType) {
+      notificationStore.showNotification('Необходимо выбрать компонент и дефект!', 'error');
+      return;
+    }
+
+    if (!defectRecord.value.startCoordinates.coordStartKm || !defectRecord.value.startCoordinates.coordStartPk) {
+      notificationStore.showNotification('Необходимо указать координаты дефекта!', 'error');
+      return;
+    }
+
+    if (!savedInspectionId.value) {
+      notificationStore.showNotification('Сначала необходимо сохранить информацию по работе!', 'error');
+      return;
+    }
+
+    isSaving.value = true;
+    try {
+      // Получаем данные выбранного дефекта для извлечения pv
+      const selectedDefect = defectOptions.value.find(d => d.value === defectRecord.value.defectType.value || d.value === defectRecord.value.defectType);
+      
+      if (!selectedDefect) {
+        throw new Error('Выбранный дефект не найден');
+      }
+
+      // Формируем данные для сохранения согласно требуемой структуре API
+      const currentDateTime = new Date().toISOString();
+      
+      const dataToSave = {
+        name: `${currentDateTime}-${selectedDefect.value}`,
+        objInspection: savedInspectionId.value,
+        objDefect: selectedDefect.value,
+        pvDefect: selectedDefect.pv || selectedDefect.value, // Используем pv если есть, иначе value
+        pvLocationClsSection: parseInt(props.sectionPv),
+        objLocationClsSection: props.sectionId,
+        StartKm: defectRecord.value.startCoordinates.coordStartKm,
+        FinishKm: defectRecord.value.startCoordinates.coordEndKm || defectRecord.value.startCoordinates.coordStartKm,
+        StartPicket: defectRecord.value.startCoordinates.coordStartPk,
+        FinishPicket: defectRecord.value.startCoordinates.coordEndPk || defectRecord.value.startCoordinates.coordStartPk,
+        StartLink: defectRecord.value.startCoordinates.coordStartZv || 0,
+        FinishLink: defectRecord.value.startCoordinates.coordEndZv || defectRecord.value.startCoordinates.coordStartZv || 0,
+        Description: defectRecord.value.note || '',
+        CreationDateTime: currentDateTime
+      };
+
+      console.log('Payload for defect API call:', dataToSave);
+      await saveFaultInfo(dataToSave);
+
+      notificationStore.showNotification('Дефект успешно сохранен!', 'success');
+      
+      // Очищаем форму дефекта после успешного сохранения
+      defectRecord.value = {
+        startCoordinates: { ...defectRecord.value.startCoordinates },
+        defectType: null,
+        note: '',
+        component: null,
+      };
+      defectOptions.value = [];
+      
+    } catch (error) {
+      console.error('Ошибка сохранения дефекта:', error);
+      
+      let errorMessage = 'Не удалось сохранить дефект.';
+      
+      if (error.response?.data?.error?.message) {
+        errorMessage = error.response.data.error.message;
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Ошибка сервера. Попробуйте еще раз.';
+      }
+      
+      notificationStore.showNotification(errorMessage, 'error');
+    } finally {
+      isSaving.value = false;
+    }
+  } else if (activeTab.value === 'parameters') {
+    const dataToSave = parameterRecord.value;
+    console.log('Сохраняем данные параметра:', dataToSave);
+  }
 };
 
-const parseCoordinates = (coordString) => {
-  if (!coordString || typeof coordString !== 'string') return {};
+const formatCoordinates = (startKm, startPk, startZv, finishKm, finishPk, finishZv) => {
+  const startPart = startKm != null && startPk != null ? `${startKm}км ${startPk}пк${startZv != null ? ` ${startZv}зв` : ''}` : '';
+  const finishPart = finishKm != null && finishPk != null ? `${finishKm}км ${finishPk}пк${finishZv != null ? ` ${finishZv}зв` : ''}` : '';
+  return startPart && finishPart ? `${startPart} — ${finishPart}` : 'Координаты отсутствуют';
+};
 
-  const parts = coordString.split('—');
-  const startPart = parts[0]?.trim();
-  const endPart = parts[1]?.trim();
+const loadExistingData = async (record) => {
+  if (!record || !record.id || !record.pv) {
+    return [];
+  }
+  try {
+    const data = await loadInspectionEntriesForWorkPlan(record.id, record.pv);
+    existingRecords.value = data.map(item => ({
+      date: formatDate(item.FactDateEnd),
+      coordinates: formatCoordinates(item.StartKm, item.StartPicket, item.StartLink, item.FinishKm, item.FinishPicket, item.FinishLink)
+    }));
+    return data; // Возвращаем исходные данные для поиска ID
+  } catch (error) {
+    console.error("Не удалось загрузить существующие записи:", error);
+    notificationStore.showNotification('Не удалось загрузить ранее внесенные записи.', 'error');
+    existingRecords.value = [];
+    return [];
+  }
+};
 
-  const parseSingleCoordinate = (part) => {
-    if (!part) return {};
-    const km = part.match(/(\d+)км/)?.[1];
-    const pk = part.match(/(\d+)пк/)?.[1];
-    const zv = part.match(/(\d+)зв/)?.[1];
-    return {
-      km: km ? Number(km) : null,
-      pk: pk ? Number(pk) : null,
-      zv: zv ? Number(zv) : null,
-    };
-  };
+const loadComponents = async () => {
+  if (!props.record?.objObject) {
+    console.warn('objObject не найден в записи:', props.record);
+    return;
+  }
 
-  const startCoords = parseSingleCoordinate(startPart);
-  const endCoords = parseSingleCoordinate(endPart);
+  loadingComponents.value = true;
+  try {
+    const components = await loadComponentsByTypObjectForSelect(props.record.objObject);
+    componentOptions.value = components.map(component => ({
+      label: component.name || component.label,
+      value: component.id || component.value,
+      objComponent: component.id || component.value
+    }));
+  } catch (error) {
+    console.error('Ошибка загрузки компонентов:', error);
+    notificationStore.showNotification('Не удалось загрузить компоненты', 'error');
+    componentOptions.value = [];
+  } finally {
+    loadingComponents.value = false;
+  }
+};
 
-  return {
-    coordStartKm: startCoords.km,
-    coordStartPk: startCoords.pk,
-    coordStartZv: startCoords.zv,
-    coordEndKm: endCoords.km,
-    coordEndPk: endCoords.pk,
-    coordEndZv: endCoords.zv,
-  };
+const loadDefects = async (objComponent) => {
+  if (!objComponent) {
+    defectOptions.value = [];
+    return;
+  }
+
+  loadingDefects.value = true;
+  try {
+    const defects = await loadDefectsByComponentForSelect(objComponent);
+    defectOptions.value = defects.map(defect => ({
+      label: defect.name || defect.label,
+      value: defect.id || defect.value,
+      pv: defect.pv || defect.id || defect.value // Сохраняем pv для использования в API
+    }));
+  } catch (error) {
+    console.error('Ошибка загрузки дефектов:', error);
+    notificationStore.showNotification('Не удалось загрузить дефекты', 'error');
+    defectOptions.value = [];
+  } finally {
+    loadingDefects.value = false;
+  }
+};
+
+const loadParameters = async (objComponent) => {
+  if (!objComponent) {
+    parameterOptions.value = [];
+    return;
+  }
+  
+  loadingParameters.value = true;
+  try {
+    const parameters = await loadComponentParametersForSelect(objComponent);
+    parameterOptions.value = parameters.map(parameter => ({
+      label: parameter.name || parameter.label,
+      value: parameter.id || parameter.value
+    }));
+  } catch (error) {
+    console.error('Ошибка загрузки параметров:', error);
+    notificationStore.showNotification('Не удалось загрузить параметры', 'error');
+    parameterOptions.value = [];
+  } finally {
+    loadingParameters.value = false;
+  }
+};
+
+const handleDefectComponentChange = async (selectedComponent) => {
+  defectRecord.value.defectType = null;
+  defectOptions.value = [];
+
+  if (selectedComponent) {
+    const componentId = selectedComponent.value || selectedComponent;
+    const component = componentOptions.value.find(c => c.value === componentId);
+    if (component?.objComponent) {
+      await loadDefects(component.objComponent);
+    }
+  }
+};
+
+const handleParameterComponentChange = async (selectedComponent) => {
+  parameterRecord.value.parameterType = null;
+  if (selectedComponent) {
+    const componentId = selectedComponent.value || selectedComponent;
+    const component = componentOptions.value.find(c => c.value === componentId);
+    if (component?.objComponent) {
+      await loadParameters(component.objComponent);
+    }
+  } else {
+    parameterOptions.value = [];
+  }
 };
 
 watch(
   () => props.record,
   (newRecordData) => {
-    if (newRecordData?.coordinates) {
-      const parsedCoords = parseCoordinates(newRecordData.coordinates);
-      Object.assign(newRecord.value.coordinates, parsedCoords);
+    if (newRecordData) {
+      objectBounds.value = {
+        StartKm: newRecordData.StartKm || null,
+        StartPicket: newRecordData.StartPicket || null,
+        StartLink: newRecordData.StartLink || null,
+        FinishKm: newRecordData.FinishKm || null,
+        FinishPicket: newRecordData.FinishPicket || null,
+        FinishLink: newRecordData.FinishLink || null,
+      };
+
+      Object.assign(newRecord.value.coordinates, {
+        coordStartKm: newRecordData.StartKm || null,
+        coordStartPk: newRecordData.StartPicket || null,
+        coordStartZv: newRecordData.StartLink || null,
+        coordEndKm: newRecordData.FinishKm || null,
+        coordEndPk: newRecordData.FinishPicket || null,
+        coordEndZv: newRecord.value.coordinates.coordEndZv,
+      });
+      
+      loadExistingData(newRecordData);
+      
+      loadComponents();
     }
   },
   { immediate: true }
 );
-
 </script>
-
-<style scoped>
-.button-container {
-  display: flex;
-  justify-content: flex-end;
-  width: 100%;
-}
-</style>
 
 <style scoped>
 .work-card-content {
@@ -379,7 +656,6 @@ watch(
   gap: 12px;
 }
 
-/* New defect section styles */
 .defects-content {
   display: flex;
   flex-direction: column;
@@ -434,6 +710,11 @@ watch(
 
 .info-heading {
   color: #3182ce;
+}
+
+.parameter-value-group {
+  display: flex;
+  gap: 16px;
 }
 
 @media (max-width: 768px) {

@@ -25,6 +25,7 @@
         :modelValue="currentStartZv"
         label="Начало (зв)"
         placeholder="зв"
+        :max="99"
         :status="shouldShowError && (isInvalid || isOutOfBounds) ? 'error' : null"
         @update:modelValue="handleStartZv"
         @focus="handleFocus"
@@ -53,6 +54,7 @@
         :modelValue="currentEndZv"
         label="Конец (зв)"
         placeholder="зв"
+        :max="99"
         :status="shouldShowError && (isInvalid || isOutOfBounds) ? 'error' : null"
         @update:modelValue="handleEndZv"
         @focus="handleFocus"
@@ -92,7 +94,6 @@ const notificationStore = useNotificationStore()
 const isUserTyping = ref(false)
 const shouldShowError = ref(false)
 
-// Use nullish coalescing to default to 0, matching CoordinateInputs.vue behavior
 const currentStartKm = computed(() => props.modelValue.coordStartKm ?? 0)
 const currentStartPk = computed(() => props.modelValue.coordStartPk ?? 0)
 const currentStartZv = computed(() => props.modelValue.coordStartZv ?? 0)
@@ -100,23 +101,31 @@ const currentEndKm = computed(() => props.modelValue.coordEndKm ?? 0)
 const currentEndPk = computed(() => props.modelValue.coordEndPk ?? 0)
 const currentEndZv = computed(() => props.modelValue.coordEndZv ?? 0)
 
-const startAbs = computed(() => currentStartKm.value * 1000 + currentStartPk.value * 100 + currentStartZv.value)
-const endAbs = computed(() => currentEndKm.value * 1000 + currentEndPk.value * 100 + currentEndZv.value)
+const startAbs = computed(() => currentStartKm.value * 1000 + currentStartPk.value * 100 + currentStartZv.value * 25)
+const endAbs = computed(() => currentEndKm.value * 1000 + currentEndPk.value * 100 + currentEndZv.value * 25)
 
 const isInvalid = computed(() => startAbs.value > endAbs.value)
 
 const isOutOfBounds = computed(() => {
   if (!props.objectBounds) return false
-  const objStartAbs = props.objectBounds.StartKm * 1000 + props.objectBounds.StartPicket * 100 + (props.objectBounds.StartZv || 0)
-  const objEndAbs = props.objectBounds.FinishKm * 1000 + props.objectBounds.FinishPicket * 100 + (props.objectBounds.FinishZv || 0)
+  
+  // Проверяем наличие всех необходимых полей в objectBounds
+  const hasStartZv = props.objectBounds.StartZv !== undefined && props.objectBounds.StartZv !== null
+  const hasFinishZv = props.objectBounds.FinishZv !== undefined && props.objectBounds.FinishZv !== null
+  
+  const objStartAbs = props.objectBounds.StartKm * 1000 + 
+                      props.objectBounds.StartPicket * 100 + 
+                      (hasStartZv ? props.objectBounds.StartZv * 25 : 0)
+  const objEndAbs = props.objectBounds.FinishKm * 1000 + 
+                    props.objectBounds.FinishPicket * 100 + 
+                    (hasFinishZv ? props.objectBounds.FinishZv * 25 : 0)
+  
   return startAbs.value < objStartAbs || endAbs.value > objEndAbs
 })
 
-// The clamp function in this file needs to be updated to match the behavior of the computed properties
 const clamp = (value, min, max) => {
-  // If value is null, return null to allow the input to be empty
-  if (value == null || isNaN(value)) return null
-  const num = Number(value)
+  if (value == null || isNaN(value)) return min
+  const num = Math.floor(Number(value))
   return Math.max(min, Math.min(max, num))
 }
 
@@ -129,10 +138,10 @@ const updateCoords = (field, value) => {
 
 const handleStartKm = (value) => updateCoords('coordStartKm', clamp(value, 0, 9999))
 const handleStartPk = (value) => updateCoords('coordStartPk', clamp(value, 0, 10))
-const handleStartZv = (value) => updateCoords('coordStartZv', clamp(value, 0, 99))
+const handleStartZv = (value) => updateCoords('coordStartZv', clamp(value, 0, 99)) // Assuming a max value for zv
 const handleEndKm = (value) => updateCoords('coordEndKm', clamp(value, 0, 9999))
 const handleEndPk = (value) => updateCoords('coordEndPk', clamp(value, 0, 10))
-const handleEndZv = (value) => updateCoords('coordEndZv', clamp(value, 0, 99))
+const handleEndZv = (value) => updateCoords('coordEndZv', clamp(value, 0, 99)) // Assuming a max value for zv
 
 const performValidation = () => {
   if (isInvalid.value) {
