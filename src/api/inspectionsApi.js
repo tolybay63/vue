@@ -213,6 +213,81 @@ const loadComponentParametersForSelect = async (objComponent) => {
   }
 };
 
+const loadFaultEntriesForInspection = async (inspectionId) => {
+  try {
+    const response = await axios.post(
+      API_BASE_URL,
+      {
+        method: "data/loadFaultEntriesForInspection",
+        params: [inspectionId],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    return response.data.result?.records || [];
+  } catch (error) {
+    console.error("Ошибка при загрузке записей о неисправностях:", error);
+    throw error;
+  }
+};
+
+const loadParameterEntriesForInspection = async (inspectionId) => {
+  try {
+    const response = await axios.post(
+      API_BASE_URL,
+      {
+        method: "data/loadParameterEntriesForInspection",
+        params: [inspectionId],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    return response.data.result?.records || [];
+  } catch (error) {
+    console.error("Ошибка при загрузке записей о параметрах:", error);
+    throw error;
+  }
+};
+
+const saveParameterInfo = async (payload) => {
+  try {
+    const response = await axios.post(
+      API_BASE_URL,
+      {
+        method: "data/saveParameterLog",
+        params: ["ins", payload],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const loadFactorValForSelect = async (propName) => {
+  try {
+    const response = await axios.post(
+      AUTH_API_URL,
+      {
+        method: "data/loadFactorValForSelect",
+        params: [propName],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    return response.data.result?.records || [];
+  } catch (error) {
+    console.error("Ошибка при загрузке факторов:", error);
+    throw error;
+  }
+};
+
 export {
   loadSections,
   loadWorkPlanDates,
@@ -220,8 +295,12 @@ export {
   loadInspectionEntriesForWorkPlan,
   saveInspectionInfo,
   saveFaultInfo,
+  saveParameterInfo,
   fetchUserData,
   loadComponentsByTypObjectForSelect,
   loadDefectsByComponentForSelect,
   loadComponentParametersForSelect,
+  loadFaultEntriesForInspection,
+  loadParameterEntriesForInspection,
+  loadFactorValForSelect
 };

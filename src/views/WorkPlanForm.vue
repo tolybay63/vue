@@ -76,19 +76,30 @@
       :sectionPv="selectedSectionPv"
       @close="isWorkCardModalOpen = false"
     />
+
+    <ConfirmationModal
+      v-if="isConfirmModalOpen"
+      title="Завершение работы"
+      message="Вы уверены, что хотите завершить эту работу?"
+      @confirm="handleConfirmComplete"
+      @cancel="isConfirmModalOpen = false"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, h } from 'vue';
 import { useRouter } from 'vue-router';
-import { loadSections, loadWorkPlanDates, loadWorkPlanUnfinishedByDate } from '@/api/inspectionsApi.js';
-
+import { useNotificationStore } from '@/stores/notificationStore'; 
+import { loadSections, loadWorkPlanDates, loadWorkPlanUnfinishedByDate } from '@/api/inspectionsApi.js'; 
+import { completeThePlanWork } from '@/api/planWorkApi.js'; 
 import AppDropdown from '@/components/ui/FormControls/AppDropdown.vue';
 import BaseTable from '@/components/layout/Table/BaseTable.vue';
 import BackButton from '@/components/ui/BackButton.vue';
 import MainButton from '@/components/ui/MainButton.vue';
+import UiButton from '@/components/ui/UiButton.vue';
 import WorkCardModal from '@/modals/WorkCardModal.vue';
+import ConfirmationModal from '@/modals/ConfirmationModal.vue';
 
 const selectedSection = ref(null);
 const selectedMonth = ref(null);
@@ -100,12 +111,14 @@ const sections = ref([]);
 const sectionsData = ref([]);
 const months = ref([]);
 const days = ref([]);
-
 const monthDropdownKey = ref(0);
 const dayDropdownKey = ref(0);
-
 const isWorkCardModalOpen = ref(false);
 const selectedRecord = ref(null);
+const isConfirmModalOpen = ref(false);
+const recordToComplete = ref(null);
+const router = useRouter();
+const notificationStore = useNotificationStore(); 
 
 const selectedDate = computed(() => {
   if (!selectedMonth.value || !selectedDay.value) return null;
@@ -137,15 +150,75 @@ const getSelectedSectionData = () => {
 
 const selectedSectionPv = computed(() => getSelectedSectionData().pv);
 
+const onRowDoubleClick = (row) => {
+  selectedRecord.value = row;
+  isWorkCardModalOpen.value = true;
+};
+
+const openConfirmationModal = (row) => {
+  recordToComplete.value = row;
+  isConfirmModalOpen.value = true;
+};
+
+const formatDateToISO = (date) => {
+  if (!date) return null;
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const handleConfirmComplete = async () => {
+  if (!recordToComplete.value || !recordToComplete.value.id) {
+    notificationStore.showNotification('Ошибка: Нет записи для завершения.', 'error');
+    return;
+  }
+
+  try {
+    const today = formatDateToISO(new Date());
+    
+    await completeThePlanWork(recordToComplete.value.id, today);
+    
+    notificationStore.showNotification('Работа успешно завершена!', 'success');
+    
+    await loadWorkPlanForDate();
+
+  } catch (error) {
+    const errorMessage = error.response?.data?.message || error.message || 'Не удалось завершить работу';
+    notificationStore.showNotification(`Не удалось завершить работу: ${errorMessage}`, 'error');
+  } finally {
+    isConfirmModalOpen.value = false;
+    recordToComplete.value = null;
+  }
+};
+
 const columns = [
   { key: 'name', label: 'НАИМЕНОВАНИЕ РАБОТЫ' },
   { key: 'place', label: 'МЕСТО' },
   { key: 'objectType', label: 'ТИП ОБЪЕКТА' },
   { key: 'object', label: 'ОБЪЕКТ' },
   { key: 'coordinates', label: 'КООРДИНАТЫ' },
-];
+  {
+    key: 'actions',
+    label: 'ДЕЙСТВИЯ',
+    component: {
+      setup(props, context) {
+        const rowData = context.attrs.row; 
 
-const router = useRouter();
+        const onClickHandler = (event) => {
+          event.stopPropagation(); 
+          openConfirmationModal(rowData); 
+        };
+
+        return () => h(UiButton, {
+          text: 'Завершить работу',
+          onClick: onClickHandler,
+        });
+      },
+    },
+  },
+];
 
 const goToInspections = () => {
   router.push({ name: 'Inspections' });
@@ -153,7 +226,7 @@ const goToInspections = () => {
 
 const loadWorkPlanForDate = async () => {
   if (!selectedDate.value || !selectedSection.value) {
-    window.$message?.error('Пожалуйста, выберите участок и дату.');
+    notificationStore.showNotification('Пожалуйста, выберите участок и дату.', 'error');
     return;
   }
 
@@ -183,8 +256,7 @@ const loadWorkPlanForDate = async () => {
       FinishLink: record.FinishLink,
     }));
   } catch (error) {
-    console.error('Ошибка загрузки плана:', error);
-    window.$message?.error('Не удалось загрузить план работ');
+    notificationStore.showNotification('Не удалось загрузить план работ', 'error');
     tableData.value = [];
   } finally {
     isLoading.value = false;
@@ -205,8 +277,7 @@ const loadSectionsData = async () => {
       await loadWorkPlanDatesData();
     }
   } catch (error) {
-    console.error('Ошибка при загрузке участков:', error);
-    window.$message?.error('Не удалось загрузить участки');
+    notificationStore.showNotification('Не удалось загрузить участки', 'error');
   }
 };
 
@@ -263,8 +334,7 @@ const loadWorkPlanDatesData = async () => {
     monthDropdownKey.value++;
     dayDropdownKey.value++;
   } catch (error) {
-    console.error('Ошибка при загрузке дат для плана:', error);
-    window.$message?.error('Не удалось загрузить даты для плана');
+    notificationStore.showNotification('Не удалось загрузить даты для плана', 'error');
     months.value = [];
     days.value = [];
     selectedMonth.value = null;
@@ -306,10 +376,10 @@ const onMonthChange = (newMonth) => {
 };
 
 const generatePlan = () => {
-  if (isGenerating.value) return; // Предотвращаем повторные вызовы
+  if (isGenerating.value) return; 
   
   if (!selectedDate.value) {
-    window.$message?.error('Пожалуйста, выберите корректную дату.');
+    notificationStore.showNotification('Пожалуйста, выберите корректную дату.', 'error');
     return;
   }
   isGenerating.value = true;
@@ -322,13 +392,7 @@ onMounted(async () => {
   await loadSectionsData();
 });
 
-const onRowDoubleClick = (row) => {
-  selectedRecord.value = row;
-  isWorkCardModalOpen.value = true;
-};
 </script>
-
-
 
 <style scoped>
 .plan-form-page {
