@@ -737,39 +737,47 @@ const saveWork = async () => {
 // ИЗМЕНЕННАЯ ФУНКЦИЯ formatCoordinates
 // =========================================================================
 const formatCoordinates = (startKm, startPk, startZv, finishKm, finishPk, finishZv) => {
-  // Используем оператор объединения с nullish (??) для отображения пустой строки, если null/undefined,
-  // что позволит 0 отображаться.
-  const kmStart = startKm ?? '';
-  const pkStart = startPk ?? '';
-  const zvStart = startZv ?? null; // Оставляем null, чтобы можно было проверить его ниже
-
-  const kmFinish = finishKm ?? '';
-  const pkFinish = finishPk ?? '';
-  const zvFinish = finishZv ?? null;
+  // Функции для проверки на null/undefined/0/пустую строку, 
+  // но только для координат, так как 0 может быть валидным значением.
+  // Тем не менее, API, кажется, возвращает null для отсутствующих значений.
+  // Используем проверку на null/undefined, а 0 считаем валидным.
+  const isPresent = (val) => val !== null && val !== undefined && val !== '';
 
   // Функция для создания части координат
   const createCoordPart = (km, pk, zv) => {
-    // Если km или pk являются пустой строкой (т.е. были null/undefined), это значит,
-    // что координаты неполные, но мы все равно форматируем строку.
-    if (km === '' && pk === '') {
-        // Если нет ни км, ни пк (начало/конец), возвращаем пустую строку, чтобы
-        // не возвращать " км пк".
-        return '';
+    // Если нет ни км, ни пк (начало/конец), возвращаем пустую строку.
+    if (!isPresent(km) && !isPresent(pk)) {
+      return '';
     }
-    
-    // km и pk отображаются всегда
-    let part = `${km}км ${pk}пк`;
-    
-    // звенья отображаются, только если они не null
-    if (zv !== null) {
-        part += ` ${zv}зв`;
+
+    let part = '';
+
+    if (isPresent(km)) {
+      part += `${km}км`;
     }
-    
+
+    if (isPresent(pk)) {
+      // Добавляем пробел только если уже есть КМ
+      if (part) {
+        part += ' ';
+      }
+      part += `${pk}пк`;
+    }
+
+    // Звенья отображаются, только если они присутствуют (не null/undefined)
+    if (isPresent(zv)) {
+      // Добавляем пробел, если уже есть КМ или ПК
+      if (part) {
+        part += ' ';
+      }
+      part += `${zv}зв`;
+    }
+
     return part.trim();
   };
 
-  const startPart = createCoordPart(kmStart, pkStart, zvStart);
-  const finishPart = createCoordPart(kmFinish, pkFinish, zvFinish);
+  const startPart = createCoordPart(startKm, startPk, startZv);
+  const finishPart = createCoordPart(finishKm, finishPk, finishZv);
   
   // Возвращаем отформатированную строку
   if (startPart && finishPart) {
@@ -780,7 +788,7 @@ const formatCoordinates = (startKm, startPk, startZv, finishKm, finishPk, finish
     return finishPart;
   }
   
-  // Если все пусто, возвращаем пустую строку вместо "Координаты отсутствуют"
+  // Если все пусто, возвращаем пустую строку
   return '';
 };
 // =========================================================================
