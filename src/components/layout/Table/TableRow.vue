@@ -2,11 +2,8 @@
   <tr class="data-row" @dblclick="$emit('dblclick', row)">
     <td v-for="(col, i) in columns" :key="col.key" class="cell">
       <template v-if="col.component">
-        <component
-          :is="col.component"
-          v-bind="col.propsMap === 'row' ? { row } : row[col.key]"
-        />
-        </template>
+        <component :is="col.component" v-bind="row[col.key]" :row="row" />
+      </template>
       <template v-else-if="i === 0">
         <span class="index-icon-wrap">
           <span class="row-index">{{ fullIndex }}</span>
