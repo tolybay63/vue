@@ -88,18 +88,18 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, h } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { useNotificationStore } from '@/stores/notificationStore'; 
-import { loadSections, loadWorkPlanDates, loadWorkPlanUnfinishedByDate } from '@/api/inspectionsApi.js'; 
-import { completeThePlanWork } from '@/api/planWorkApi.js'; 
+import { useNotificationStore } from '@/stores/notificationStore';
+import { loadSections, loadWorkPlanDates, loadWorkPlanUnfinishedByDate } from '@/api/inspectionsApi.js';
+import { completeThePlanWork } from '@/api/planWorkApi.js';
 import AppDropdown from '@/components/ui/FormControls/AppDropdown.vue';
 import BaseTable from '@/components/layout/Table/BaseTable.vue';
 import BackButton from '@/components/ui/BackButton.vue';
 import MainButton from '@/components/ui/MainButton.vue';
-import UiButton from '@/components/ui/UiButton.vue';
 import WorkCardModal from '@/modals/WorkCardModal.vue';
 import ConfirmationModal from '@/modals/ConfirmationModal.vue';
+import CompleteWorkButton from '@/components/ui/CompleteWorkButton.vue';
 
 const selectedSection = ref(null);
 const selectedMonth = ref(null);
@@ -118,7 +118,7 @@ const selectedRecord = ref(null);
 const isConfirmModalOpen = ref(false);
 const recordToComplete = ref(null);
 const router = useRouter();
-const notificationStore = useNotificationStore(); 
+const notificationStore = useNotificationStore();
 
 const selectedDate = computed(() => {
   if (!selectedMonth.value || !selectedDay.value) return null;
@@ -154,7 +154,6 @@ const onRowDoubleClick = (row) => {
   selectedRecord.value = row;
   isWorkCardModalOpen.value = true;
 };
-
 const openConfirmationModal = (row) => {
   recordToComplete.value = row;
   isConfirmModalOpen.value = true;
@@ -177,11 +176,11 @@ const handleConfirmComplete = async () => {
 
   try {
     const today = formatDateToISO(new Date());
-    
+
     await completeThePlanWork(recordToComplete.value.id, today);
-    
+
     notificationStore.showNotification('Работа успешно завершена!', 'success');
-    
+
     await loadWorkPlanForDate();
 
   } catch (error) {
@@ -202,21 +201,8 @@ const columns = [
   {
     key: 'actions',
     label: 'ДЕЙСТВИЯ',
-    component: {
-      setup(props, context) {
-        const rowData = context.attrs.row; 
-
-        const onClickHandler = (event) => {
-          event.stopPropagation(); 
-          openConfirmationModal(rowData); 
-        };
-
-        return () => h(UiButton, {
-          text: 'Завершить работу',
-          onClick: onClickHandler,
-        });
-      },
-    },
+    component: CompleteWorkButton, 
+    propsMap: 'row', 
   },
 ];
 
@@ -376,8 +362,8 @@ const onMonthChange = (newMonth) => {
 };
 
 const generatePlan = () => {
-  if (isGenerating.value) return; 
-  
+  if (isGenerating.value) return;
+
   if (!selectedDate.value) {
     notificationStore.showNotification('Пожалуйста, выберите корректную дату.', 'error');
     return;
