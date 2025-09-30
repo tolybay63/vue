@@ -19,13 +19,15 @@
               Для входа во внутреннюю систему DTJ Service введите логин и пароль.
             </p>
           </div>
-
-          <div class="form-fields">
-            <AppInput v-model="username" placeholder="Логин" />
-            <AppInput v-model="password" type="password" placeholder="Пароль" />
-          </div>
-
-          <MainButton :label="'ВОЙТИ'" :loading="loading" @click="handleLogin" />
+          
+          <form @submit.prevent="handleLogin">
+            <div class="form-fields">
+              <AppInput v-model="username" placeholder="Логин" />
+              <AppInput v-model="password" type="password" placeholder="Пароль" />
+            </div>
+  
+            <MainButton :label="'ВОЙТИ'" :loading="loading" type="submit" />
+          </form>
         </div>
       </div>
     </div>

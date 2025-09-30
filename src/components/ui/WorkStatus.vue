@@ -7,39 +7,24 @@
       :title="showCheck ? 'Работа выполнена' : 'Работа не выполнена'"
     >
       <UiIcon
+        :class="showCheck ? 'icon-green' : 'icon-red'"
         :name="showCheck ? 'Check' : 'Minus'"
         class="status-icon"
-        :color="showCheck ? ICON_COLORS.green : ICON_COLORS.red"
       />
     </div>
 
-    <div
-      v-if="showHammer"
-      class="icon-circle circle-blue"
-      title="Зарегистрированы неисправности"
-    >
-      <UiIcon name="Hammer" class="status-icon" :color="ICON_COLORS.blue" />
+    <div v-if="showHammer" class="icon-circle circle-blue" title="Зарегистрированы неисправности">
+      <UiIcon name="Hammer" class="status-icon icon-blue" />
     </div>
 
-    <div
-      v-if="showRuler"
-      class="icon-circle circle-blue"
-      title="Зарегистрированы параметры"
-    >
-      <UiIcon name="Ruler" class="status-icon" :color="ICON_COLORS.blue" />
+    <div v-if="showRuler" class="icon-circle circle-blue" title="Зарегистрированы параметры">
+      <UiIcon name="Ruler" class="status-icon icon-blue" />
     </div>
   </div>
 </template>
 
 <script setup>
 import UiIcon from '@/components/ui/UiIcon.vue';
-
-// Определяем цветовые константы для иконок
-const ICON_COLORS = {
-  green: '#005F00',
-  red: '#D70C0C',
-  blue: '#2286C8',
-};
 
 const props = defineProps({
   showCheck: {
@@ -92,5 +77,17 @@ const props = defineProps({
   margin-right: 0;
   width: 18px;
   height: 18px;
+}
+
+.icon-green {
+  color: #005f00;
+}
+
+.icon-red {
+  color: #d70c0c;
+}
+
+.icon-blue {
+  color: #2286c8;
 }
 </style>
