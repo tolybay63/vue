@@ -10,22 +10,32 @@
     :dropdownConfig="dropdownConfig"
     :showFilters="true"
     :filters="filters"
+    :getRowClassFn="getRowClassFn"
     @update:filters="filters = $event"
     @row-dblclick="onRowDoubleClick"
   >
     <template #modals="{ selectedRow, showEditModal, closeModals }">
     </template>
   </TableWrapper>
+
+  <ModalParameterLogInfo
+    v-if="isModalOpen"
+    :rowData="selectedRowData"
+    @close="closeModal"
+  />
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
 import TableWrapper from '@/components/layout/Table/TableWrapper.vue';
+import ModalParameterLogInfo from '@/modals/ModalParameterLogInfo.vue';
 import { loadParameterLog } from '@/api/parameterLogApi';
 import { loadPeriodTypes } from '@/api/periodApi';
 
 const limit = 10;
 const tableWrapperRef = ref(null);
+const isModalOpen = ref(false);
+const selectedRowData = ref(null);
 
 const filters = ref({
   date: new Date(),
@@ -88,6 +98,7 @@ const loadParameterLogWrapper = async ({ page, limit, filters: filterValues }) =
 
     const sliced = records.slice(start, end).map((r, index) => ({
       index: start + index + 1,
+      objInspection: r.objInspection,
       FactDateEnd: r.FactDateEnd,
       nameLocationClsSection: r.nameLocationClsSection,
       nameSection: r.nameSection,
@@ -100,10 +111,10 @@ const loadParameterLogWrapper = async ({ page, limit, filters: filterValues }) =
       ParamsLimit: r.ParamsLimit,
       nameOutOfNorm: r.nameOutOfNorm,
       Description: r.Description,
-      // Отделяем дату и время
       CreationDate: r.CreationDateTime ? r.CreationDateTime.split('T')[0] : null,
       CreationTime: r.CreationDateTime ? r.CreationDateTime.split('T')[1].substring(0, 8) : null,
       rawData: r,
+      hasDeviation: r.pvOutOfNorm !== 1300,
     }));
 
     return {
@@ -118,10 +129,24 @@ const loadParameterLogWrapper = async ({ page, limit, filters: filterValues }) =
 
 const onRowDoubleClick = (row) => {
   console.log('Двойной клик по строке:', row);
+  selectedRowData.value = row;
+  isModalOpen.value = true;
+};
+
+const closeModal = () => {
+  isModalOpen.value = false;
+  selectedRowData.value = null;
+};
+
+const getRowClassFn = (row) => {
+  return {
+    'row-has-deviation': row.hasDeviation,
+  };
 };
 
 const columns = [
   { key: 'index', label: '№' },
+  { key: 'objInspection', label: 'ссылка на работу' },
   { key: 'FactDateEnd', label: 'Дата проверки' },
   { key: 'nameLocationClsSection', label: 'Участок' },
   // { key: 'nameSection', label: 'Место' },

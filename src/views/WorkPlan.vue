@@ -101,6 +101,28 @@ const formatDateToString = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+const formatCoordinates = (startKm, startPk, startZv, finishKm, finishPk, finishZv) => {
+  const isPresent = (val) => val !== null && val !== undefined && val !== '';
+
+  const createCoordPart = (km, pk, zv) => {
+    const parts = [];
+    if (isPresent(km)) parts.push(`${km}км`);
+    if (isPresent(pk)) parts.push(`${pk}пк`);
+    if (isPresent(zv)) parts.push(`${zv}зв`);
+    return parts.join(' ');
+  };
+
+  const startPart = createCoordPart(startKm, startPk, startZv);
+  const finishPart = createCoordPart(finishKm, finishPk, finishZv);
+
+  if (startPart && finishPart) {
+    return `${startPart} - ${finishPart}`;
+  } else if (startPart) {
+    return startPart;
+  }
+  return 'Координаты отсутствуют';
+};
+
 const loadWorkPlanWrapper = async ({ page, limit, filters: filterValues }) => {
   try {
     
@@ -118,11 +140,12 @@ const loadWorkPlanWrapper = async ({ page, limit, filters: filterValues }) => {
     const end = page * limit;
 
     const sliced = records.slice(start, end).map((r, index) => ({
-      index: start + index + 1,
+      index: null,
+      id: r.id,
       name: r.nameLocationClsSection,
       work: r.nameClsWork,
       fullNameWork: r.fullNameWork,
-      coordinates: `${r.StartKm} км ${r.StartPicket} пк - ${r.FinishKm} км ${r.FinishPicket} пк`,
+      coordinates: formatCoordinates(r.StartKm, r.StartPicket, null, r.FinishKm, r.FinishPicket, null),
       object: r.fullNameObject,
       planDate: r.PlanDateEnd,
       rawData: r,
@@ -151,7 +174,7 @@ const onRowDoubleClick = (row) => {
 };
 
 const columns = [
-  { key: 'index', label: '№' },
+  { key: 'id', label: '№', hide: true },
   { key: 'name', label: 'Участок' },
   { key: 'work', label: 'Вид работы' },
   { key: 'fullNameWork', label: 'Работы' },
