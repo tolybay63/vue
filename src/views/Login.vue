@@ -19,13 +19,13 @@
               Для входа во внутреннюю систему DTJ Service введите логин и пароль.
             </p>
           </div>
-
+          
           <form @submit.prevent="handleLogin">
             <div class="form-fields">
               <AppInput v-model="username" placeholder="Логин" />
               <AppInput v-model="password" type="password" placeholder="Пароль" />
             </div>
-
+  
             <MainButton :label="'ВОЙТИ'" :loading="loading" type="submit" />
           </form>
         </div>
@@ -62,65 +62,62 @@ export default {
     }
   },
   methods: {
-    async handleLogin() {
-      if (this.loading) return; // Предотвращаем повторные вызовы
+  async handleLogin() {
+    const notify = useNotificationStore()
+    this.loading = true
 
-      const notify = useNotificationStore()
-      this.loading = true
+    try {
 
-      try {
-        const loginResponse = await login(this.username, this.password)
-        
-        // This is the correct way to get the user ID
-        const curUser = await getCurrentUser()
-        const userId = curUser?.result?.id
-        
-        if (!userId) throw new Error("Не удалось получить ID пользователя")
+      const loginResponse = await login(this.username, this.password)
 
-        const personnalInfo = await getPersonnalInfo(userId)
-        const info = personnalInfo?.records?.[0] || {}
+      const curUser = await getCurrentUser()
+      const userId = curUser?.id
+      if (!userId) throw new Error("Не удалось получить ID пользователя")
 
-        if (info.objLocation) {
-          localStorage.setItem("objLocation", info.objLocation)
-        } else {
-          console.warn("objLocation не найден в personnalInfo")
-        }
+      const personnalInfo = await getPersonnalInfo(userId)
+      const info = personnalInfo?.records?.[0] || {}
 
-        localStorage.setItem("userAuth", JSON.stringify(loginResponse))
-        localStorage.setItem("curUser", JSON.stringify(curUser))
-        localStorage.setItem("personnalInfo", JSON.stringify(info))
-
-        notify.showNotification("Успешный вход!", "success")
-        this.$router.push("/work-plan")
-      } catch (err) {
-        console.error("Ошибка при входе:", err)
-
-        let message = "Ошибка авторизации"
-        if (err?.response?.data) {
-          const data = err.response.data
-          if (typeof data === "string") {
-            if (data.includes("Имя пользователя")) {
-              message = "Имя пользователя или пароль не верные"
-            } else {
-              message = data
-            }
-          } else if (typeof data === "object" && data.message) {
-            message = data.message
-          }
-        } else if (typeof err?.request?.response === "string") {
-          const html = err.request.response
-          const match = html.match(/<pre[^>]*>(.*?)<\/pre>/i)
-          if (match && match[1]) message = match[1]
-        } else if (err.message) {
-          message = err.message
-        }
-
-        notify.showNotification(message, "error")
-      } finally {
-        this.loading = false
+      if (info.objLocation) {
+        localStorage.setItem("objLocation", info.objLocation)
+      } else {
+        console.warn("objLocation не найден в personnalInfo")
       }
-    },
+
+      localStorage.setItem("userAuth", JSON.stringify(loginResponse))
+      localStorage.setItem("curUser", JSON.stringify(curUser))
+      localStorage.setItem("personnalInfo", JSON.stringify(info))
+
+      notify.showNotification("Успешный вход!", "success")
+      this.$router.push("/work-plan")
+    } catch (err) {
+      console.error("Ошибка при входе:", err)
+
+      let message = "Ошибка авторизации"
+      if (err?.response?.data) {
+        const data = err.response.data
+        if (typeof data === "string") {
+          if (data.includes("Имя пользователя")) {
+            message = "Имя пользователя или пароль не верные"
+          } else {
+            message = data
+          }
+        } else if (typeof data === "object" && data.message) {
+          message = data.message
+        }
+      } else if (typeof err?.request?.response === "string") {
+        const html = err.request.response
+        const match = html.match(/<pre[^>]*>(.*?)<\/pre>/i)
+        if (match && match[1]) message = match[1]
+      } else if (err.message) {
+        message = err.message
+      }
+
+      notify.showNotification(message, "error")
+    } finally {
+      this.loading = false
+    }
   },
+},
 }
 </script>
 
@@ -236,11 +233,7 @@ export default {
   height: 100%;
 }
 
-form {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
+
 @media (max-width: 480px) {
   .logo-fixed,
   .language-fixed {
