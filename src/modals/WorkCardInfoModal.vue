@@ -1,5 +1,13 @@
 <template>
-  <ModalWrapper title="Карточка осмотра/проверки" :showFooter="false" @close="closeModal">
+  <ModalWrapper
+    title="Карточка осмотра/проверки"
+    :showSaveButton="false"
+    :showCancelButton="false"
+    :showDelete="true"
+    @close="closeModal"
+    @delete="handleDelete" 
+    :disabled="isSaving"
+  >
     <div class="work-card-content">
       <WorkHeaderInfo :record="record" :section="section" :date="date" />
 
@@ -209,7 +217,7 @@ const props = defineProps({
   inspectionId: { type: [Number, String], default: null },
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'delete-work']); // Added 'delete-work' for clarity
 
 const isSaving = ref(false);
 
@@ -273,6 +281,20 @@ const validateMinMax = () => {
 };
 
 const closeModal = () => { emit('close'); };
+
+// Assuming you'll handle the delete logic here or re-emit to the parent
+const handleDelete = () => {
+    // Implement your deletion logic or emit an event
+    // For example:
+    // if (confirm('Вы уверены, что хотите удалить эту рабочую карточку?')) {
+    //     emit('delete-work', savedInspectionId.value);
+    //     closeModal();
+    // }
+    console.log('Кнопка "Удалить" в модале WorkCardInfoModal нажата.');
+    // You might want to ask for confirmation and then emit a more specific event for deletion:
+    // emit('delete-inspection', savedInspectionId.value);
+};
+
 
 const getButtonLabel = () => {
   switch (activeTab.value) {
@@ -616,7 +638,7 @@ watch(() => props.inspectionId, (newId) => {
 .coordinates-input-group { display: flex; gap: 24px; width: 100%; }
 .coord-start, .coord-end { flex: 1; }
 .full-width-input { width: 100%; }
-.button-container { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 24px; }
+.button-container { display: flex; justify-content: flex-end; align-items: flex-end; margin-top: 24px; }
 .main-actions { display: flex; gap: 12px; }
 .defects-content { display: flex; flex-direction: column; gap: 16px; }
 .defect-heading { color: #c70039; }
