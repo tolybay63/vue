@@ -185,6 +185,14 @@
       </div>
     </div>
   </ModalWrapper>
+
+  <ConfirmationModal
+    v-if="showConfirmModal"
+    title="Удаление карточки осмотра"
+    :message="`Вы действительно хотите удалить карточку осмотра/проверки?`"
+    @confirm="onConfirmDelete"
+    @cancel="onCancelDelete"
+  />
 </template>
 
 <script setup>
@@ -199,6 +207,7 @@ import AppNumberInput from '@/components/ui/FormControls/AppNumberInput.vue';
 import TabsHeader from '@/components/ui/TabsHeader.vue';
 import WorkHeaderInfo from '@/components/ui/WorkHeaderInfo.vue';
 import ExistingDataBlock from '@/components/ui/ExistingDataBlock.vue';
+import ConfirmationModal from './ConfirmationModal.vue'; // Импорт модального окна подтверждения
 import { useNotificationStore } from '@/stores/notificationStore';
 import { 
   loadInspectionEntriesForWorkPlan, saveFaultInfo, saveParameterInfo, 
@@ -206,6 +215,7 @@ import {
   loadComponentParametersForSelect, loadFaultEntriesForInspection, 
   loadParameterEntriesForInspection
 } from '@/api/inspectionsApi.js';
+import { deleteFaultOrParameter } from '@/api/faultApi.js'; // Импорт метода удаления
 import { formatDate } from '@/stores/date.js';
 
 const props = defineProps({
@@ -217,7 +227,7 @@ const props = defineProps({
   inspectionId: { type: [Number, String], default: null },
 });
 
-const emit = defineEmits(['close', 'delete-work']); // Added 'delete-work' for clarity
+const emit = defineEmits(['close', 'delete-work']); 
 
 const isSaving = ref(false);
 
@@ -226,6 +236,8 @@ const savedInspectionId = ref(props.inspectionId);
 
 const shouldShowMinMaxError = ref(false);
 const isUserTypingMinMax = ref(false);
+
+const showConfirmModal = ref(false); // Состояние для модального окна подтверждения
 
 const tabs = ref([
   { name: 'defects', label: 'Неисправности', icon: 'AlertTriangle' },
@@ -282,18 +294,45 @@ const validateMinMax = () => {
 
 const closeModal = () => { emit('close'); };
 
-// Assuming you'll handle the delete logic here or re-emit to the parent
+// --- Логика удаления (аналогично ModalFaultInfo.vue) ---
+
 const handleDelete = () => {
-    // Implement your deletion logic or emit an event
-    // For example:
-    // if (confirm('Вы уверены, что хотите удалить эту рабочую карточку?')) {
-    //     emit('delete-work', savedInspectionId.value);
-    //     closeModal();
-    // }
-    console.log('Кнопка "Удалить" в модале WorkCardInfoModal нажата.');
-    // You might want to ask for confirmation and then emit a more specific event for deletion:
-    // emit('delete-inspection', savedInspectionId.value);
+    console.log('Кнопка "Удалить" в модале WorkCardInfoModal нажата. Показ модала подтверждения.');
+    showConfirmModal.value = true;
 };
+
+const onCancelDelete = () => {
+  showConfirmModal.value = false;
+};
+
+const onConfirmDelete = async () => {
+  showConfirmModal.value = false;
+  
+  const recordId = props.inspectionId; 
+
+  if (!recordId) {
+    console.error('Не удалось получить ID осмотра для удаления.');
+    notificationStore.showNotification('Не удалось получить ID осмотра для удаления.', 'error');
+    return;
+  }
+
+  try {
+    console.log(`Попытка удаления записи осмотра с ID: ${recordId}`);
+    // Используем тот же API метод, что и в ModalFaultInfo.vue
+    await deleteFaultOrParameter(recordId); 
+    
+    console.log('Удаление успешно.');
+    notificationStore.showNotification('Карточка осмотра успешно удалена!', 'success');
+    // Эмитим событие, чтобы родительский компонент мог обновить список и закрыть модальное окно
+    emit('delete-work'); 
+
+  } catch (error) {
+    console.error('Ошибка при удалении записи осмотра:', error);
+    notificationStore.showNotification('Ошибка при удалении карточки осмотра.', 'error');
+  }
+};
+
+// --- Конец логики удаления ---
 
 
 const getButtonLabel = () => {

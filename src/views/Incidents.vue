@@ -1,7 +1,7 @@
 <template>
   <TableWrapper
     ref="tableWrapperRef"
-    title="Журнал осмотров и проверок"
+    title="Журнал событий и запросов на работы"
     :columns="columns"
     :actions="tableActions"
     :limit="limit"
@@ -40,8 +40,6 @@ const router = useRouter();
 
 const limit = 10;
 const tableWrapperRef = ref(null);
-
-// Новые реактивные переменные для модального окна
 const showWorkCardInfoModal = ref(false);
 const selectedRecord = ref(null);
 
@@ -155,7 +153,7 @@ const loadInspectionsWrapper = async ({ page, limit, filters: filterValues }) =>
         showHammer: r.nameFlagDefect === 'да',
         showRuler: r.nameFlagParameter === 'да',
       },
-      // Добавляем флаг для стилизации строки
+
       hasDefects: r.nameFlagDefect === 'да',
     }));
 
