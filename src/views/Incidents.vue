@@ -5,7 +5,7 @@
     :columns="columns"
     :actions="tableActions"
     :limit="limit"
-    :loadFn="loadInspectionsWrapper"
+    :loadFn="loadIncidentsWrapper"
     :datePickerConfig="datePickerConfig"
     :dropdownConfig="dropdownConfig"
     :showFilters="true"
@@ -13,17 +13,21 @@
     :getRowClassFn="getRowClassFn"
     @update:filters="filters = $event"
     @row-dblclick="onRowDoubleClick"
-  />
-  <WorkCardInfoModal
-    v-if="showWorkCardInfoModal"
-    :record="selectedRecord"
-    :inspectionId="selectedRecord?.rawData?.id"
-    :section="selectedRecord?.name"
-    :date="selectedRecord?.factDate"
-    :sectionId="selectedRecord?.rawData?.objLocationClsSection"
-    :sectionPv="selectedRecord?.rawData?.pvLocationClsSection"
-    @delete-work="handleInspectionDeleted"
-    @close="showWorkCardInfoModal = false"
+  >
+  <template #modals>
+      <ModalIncidentInfo
+        v-if="showIncidentInfoModal && selectedRecord"
+        :rowData="selectedRecord"
+        @deleted="handleIncidentDeleted"
+        @close="showIncidentInfoModal = false; selectedRecord = null"
+      />
+    </template>
+  </TableWrapper>
+
+  <ModalAddIncident
+    v-if="showAddIncidentModal"
+    @close="closeAddIncidentModal"
+    @update-table="handleTableUpdate"
   />
 </template>
 
@@ -31,16 +35,19 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import TableWrapper from '@/components/layout/Table/TableWrapper.vue';
-import { loadInspections } from '@/api/inspectionApi';
+import { loadIncidents } from '@/api/incidentApi'; 
 import { loadPeriodTypes } from '@/api/periodApi';
-import WorkStatus from '@/components/ui/WorkStatus.vue';
-import WorkCardInfoModal from '@/modals/WorkCardInfoModal.vue';
+
+import ModalAddIncident from '@/modals/ModalAddIncident.vue'; 
+import ModalIncidentInfo from '@/modals/ModalIncidentInfo.vue'; 
 
 const router = useRouter();
 
 const limit = 10;
 const tableWrapperRef = ref(null);
-const showWorkCardInfoModal = ref(false);
+
+const showIncidentInfoModal = ref(false);
+const showAddIncidentModal = ref(false);
 const selectedRecord = ref(null);
 
 const filters = ref({
@@ -64,7 +71,6 @@ onMounted(async () => {
     const types = await loadPeriodTypes();
     
     dropdownConfig.value.options = types;
-    
     const defaultType = types.find(t => t.value === 41);
     if (defaultType) {
       filters.value.periodType = defaultType;
@@ -82,6 +88,11 @@ const handleTableUpdate = () => {
   if (tableWrapperRef.value && tableWrapperRef.value.refreshTable) {
     tableWrapperRef.value.refreshTable();
   }
+};
+
+const closeAddIncidentModal = () => {
+  showAddIncidentModal.value = false;
+  handleTableUpdate(); 
 };
 
 const formatDateToString = (date) => {
@@ -115,7 +126,7 @@ const formatCoordinates = (startKm, startPk, startZv, finishKm, finishPk, finish
   return 'Координаты отсутствуют';
 };
 
-const loadInspectionsWrapper = async ({ page, limit, filters: filterValues }) => {
+const loadIncidentsWrapper = async ({ page, limit, filters: filterValues }) => {
   try {
     const objLocation = localStorage.getItem('objLocation');
     if (!objLocation) {
@@ -124,69 +135,63 @@ const loadInspectionsWrapper = async ({ page, limit, filters: filterValues }) =>
 
     const selectedDate = filterValues.date ? formatDateToString(filterValues.date) : formatDateToString(new Date());
     const periodTypeId = filterValues.periodType?.value ?? 41;
-
-    const records = await loadInspections(selectedDate, periodTypeId);
+    const records = await loadIncidents(selectedDate, periodTypeId);
     const totalRecords = records.length;
     const start = (page - 1) * limit;
     const end = page * limit;
 
-    const sliced = records.slice(start, end).map((r, index) => ({
-      index: null,
-      id: r.id,
-      objWorkPlan: r.objWorkPlan,
-      work: r.fullNameWork,
-      name: r.nameLocationClsSection,
-      location: r.nameSection,
-      object: r.fullNameObject,
-      coordinates: formatCoordinates(r.StartKm, r.StartPicket, r.StartLink, r.FinishKm, r.FinishPicket, r.FinishLink),
-      planDate: r.PlanDateEnd,
-      factDate: r.FactDateEnd,
-      inspector: r.fullNameUser,
-      deviation: r.nameDeviationDefect,
-      reason: r.ReasonDeviation,
-      rawData: r,
-      objWork: r.objWork,
-      objObject: r.objObject,
-      status: {
-        showCheck: r.ActualDateEnd !== '0000-01-01',
-        showMinus: r.ActualDateEnd === '0000-01-01',
-        showHammer: r.nameFlagDefect === 'да',
-        showRuler: r.nameFlagParameter === 'да',
-      },
-
-      hasDefects: r.nameFlagDefect === 'да',
-    }));
+    const sliced = records.slice(start, end).map((r, index) => {
+      const registrationDateTime = r.RegistrationDateTime;
+      let date = null;
+      let time = null;
+      
+      if (registrationDateTime && typeof registrationDateTime === 'string') {
+        [date, time] = registrationDateTime.split('T');
+      }
+      
+      return {
+        index: null,
+        id: r.id,
+        name: r.name,
+        object: r.nameObject,
+        coordinates: formatCoordinates(r.StartKm, r.StartPicket, r.StartLink, r.FinishKm, r.FinishPicket, r.FinishLink),
+        statusName: r.nameStatus, 
+        criticality: r.nameCriticality,
+        date: date,
+        time: time ? time.substring(0, 8) : null,
+        description: r.Description,
+        rawData: r,
+        hasDefects: r.nameFlagDefect,
+      };
+    });
 
     return {
       total: totalRecords,
       data: sliced,
     };
   } catch (e) {
-    console.error('Ошибка при загрузке данных инспекций:', e);
+    console.error('Ошибка при загрузке данных инцидентов:', e);
     return { total: 0, data: [] };
   }
 };
 
 const onRowDoubleClick = (row) => {
-  console.log('Двойной клик по записи:', row);
-  
+  console.log('Двойной клик по записи инцидента:', row);
   selectedRecord.value = row;
   
   if (!row.rawData?.id) {
-    console.warn('Отсутствует ID инспекции. Открытие окна Defect/Parameters невозможно.');
+    console.warn('Отсутствует ID инцидента. Открытие модального окна невозможно.');
     return;
   }
-
-  showWorkCardInfoModal.value = true;
+  showIncidentInfoModal.value = true;
 };
 
-const handleInspectionDeleted = () => {
-  showWorkCardInfoModal.value = false;
+const handleIncidentDeleted = () => {
+  showIncidentInfoModal.value = false;
   selectedRecord.value = null;
   handleTableUpdate();
 };
 
-// Функция для условного форматирования строки
 const getRowClassFn = (row) => {
   return {
     'row-has-defects': row.hasDefects,
@@ -195,15 +200,14 @@ const getRowClassFn = (row) => {
 
 const columns = [
   { key: 'id', label: '№' },
-  { key: 'objWorkPlan', label: 'ссылка на план' },
-  { key: 'work', label: 'Наименование работы' },
-  { key: 'name', label: 'Участок' },
-  { key: 'location', label: 'Место' },
+  { key: 'name', label: 'Наименование' },
   { key: 'object', label: 'Объект' },
   { key: 'coordinates', label: 'Координаты' },
-  { key: 'planDate', label: 'Плановая дата' },
-  { key: 'factDate', label: 'Фактическая дата' },
-  { key: 'status', label: 'Статус работы', component: WorkStatus,}
+  { key: 'criticality', label: 'Критичность' },
+  { key: 'statusName', label: 'Статус'},
+  { key: 'date', label: 'Дата' },
+  { key: 'time', label: 'Время' },
+  { key: 'description', label: 'Описание' },
 ];
 
 const tableActions = [
@@ -211,13 +215,19 @@ const tableActions = [
     label: 'Добавить запись',
     icon: 'Plus',
     onClick: () => {
-      router.push({ name: 'InspectionRecord' });
+      showAddIncidentModal.value = true;
     },
   },
   {
     label: 'Экспорт',
     icon: 'Download',
-    onClick: () => console.log('Экспортирование инспекций...'),
+    onClick: () => console.log('Экспортирование инцидентов...'),
   },
 ];
 </script>
+
+<style scoped>
+.row-has-defects {
+  background-color: #ffeaea;
+}
+</style>
