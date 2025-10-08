@@ -13,6 +13,17 @@
         v-model="form.incidentType"
         :options="incidentTypeOptions"
         :required="true"
+        @update:modelValue="onIncidentTypeChange"
+      />
+
+      <AppDropdown
+        class="col-span-2"
+        id="criticality"
+        label="Критичность"
+        placeholder="Критичность"
+        v-model="form.criticality"
+        :options="criticalityOptions"
+        :loading="loadingCriticality"
       />
 
       <AppDropdown
@@ -53,9 +64,20 @@
         class="col-span-2"
         v-model="coordinates"
         :object-bounds="objectBounds"
+        @update:modelValue="updateCoordinates"
         @invalid-range="handleInvalidRange" 
         @out-of-bounds="handleOutOfBounds"
         :required="true" 
+      />
+
+      <AppDropdown
+        id="section"
+        label="Участок"
+        placeholder="Выберите участок"
+        v-model="form.section"
+        :options="sectionOptions"
+        :loading="loadingSections"
+        :required="true"
       />
 
       <AppInput 
@@ -81,13 +103,13 @@
 </template>
 
 <script setup>
-import { ref, computed, defineEmits, onMounted } from 'vue'
+import { ref, defineEmits, onMounted, nextTick } from 'vue'
 import ModalWrapper from '@/components/layout/Modal/ModalWrapper.vue'
 import AppInput from '@/components/ui/FormControls/AppInput.vue'
 import AppDropdown from '@/components/ui/FormControls/AppDropdown.vue'
 import CoordinateInputs from '@/components/ui/FormControls/CoordinateInputs.vue'
-import { loadEvents, saveIncident } from '@/api/incidentApi'
-import { fetchObjectsForSelect } from '@/api/planWorkApi'
+import { loadEvents, saveIncident, loadCriticalityLevels } from '@/api/incidentApi'
+import { fetchObjectsForSelect, fetchLocationByCoords } from '@/api/planWorkApi'
 import { useNotificationStore } from '@/stores/notificationStore'
 
 const emit = defineEmits(['close', 'update-table'])
@@ -98,8 +120,10 @@ const form = ref({
   place: null,
   objectType: null,
   object: null,
+  section: null,
   description: '',
   applicantName: '',
+  criticality: null,
 })
 
 const coordinates = ref({
@@ -117,12 +141,30 @@ const incidentTypeOptions = ref([])
 const placeOptions = ref([])
 const objectTypeOptions = ref([])
 const objectOptions = ref([])
+const sectionOptions = ref([])
+const criticalityOptions = ref([])
 const allLoadedRecords = ref([])
 const filteredRecordsByPlace = ref([])
 
 const loadingPlaces = ref(false)
 const loadingObjectTypes = ref(false)
 const loadingObjects = ref(false)
+const loadingSections = ref(false)
+const loadingCriticality = ref(false)
+
+const onIncidentTypeChange = (selectedIncident) => {
+  form.value.criticality = null;
+
+  if (selectedIncident && selectedIncident.nameCriticality) {
+    // fvCriticality из события соответствует value (id) в опциях критичности
+    const foundCriticality = criticalityOptions.value.find(
+      c => c.value === selectedIncident.fvCriticality
+    );
+    if (foundCriticality) {
+      form.value.criticality = foundCriticality;
+    }
+  }
+};
 
 const loadAllObjects = async () => {
   loadingPlaces.value = true
@@ -152,11 +194,55 @@ const loadAllObjects = async () => {
   }
 }
 
+const loadSections = async (workId = 0) => {
+  form.value.section = null
+  sectionOptions.value = []
+  
+  if (!coordinates.value.coordStartKm || !coordinates.value.coordEndKm) {
+    return
+  }
+
+  loadingSections.value = true
+  try {
+    const sections = await fetchLocationByCoords(
+      workId,
+      coordinates.value.coordStartKm,
+      coordinates.value.coordEndKm,
+      coordinates.value.coordStartPk || 0,
+      coordinates.value.coordEndPk || 0
+    )
+
+    if (Array.isArray(sections) && sections.length > 0) {
+      sectionOptions.value = sections.map(s => ({
+        label: s.name || s.label,
+        value: s.id || s.value,
+        pv: s.pv,
+        fullRecord: s
+      }))
+
+      form.value.section = sections.length === 1 ? sectionOptions.value[0] : null
+    } else {
+      sectionOptions.value = []
+      form.value.section = null
+      notificationStore.showNotification('Не найден участок по указанным координатам', 'warning')
+    }
+  } catch (error) {
+    console.error('Ошибка при загрузке участков:', error)
+    notificationStore.showNotification('Ошибка при загрузке участков', 'error')
+    sectionOptions.value = []
+    form.value.section = null
+  } finally {
+    loadingSections.value = false
+  }
+}
+
 const onPlaceChange = (selectedPlaceId) => {
   form.value.objectType = null
   form.value.object = null
+  form.value.section = null
   objectTypeOptions.value = []
   objectOptions.value = []
+  sectionOptions.value = []
   filteredRecordsByPlace.value = []
   coordinates.value = { coordStartKm: null, coordStartPk: null, coordEndKm: null, coordEndPk: null }
   objectBounds.value = null
@@ -191,7 +277,9 @@ const onPlaceChange = (selectedPlaceId) => {
 
 const onObjectTypeChange = (selectedObjectTypeId) => {
   form.value.object = null
+  form.value.section = null
   objectOptions.value = []
+  sectionOptions.value = []
   coordinates.value = { coordStartKm: null, coordStartPk: null, coordEndKm: null, coordEndPk: null }
   objectBounds.value = null
   isInvalidRange.value = false
@@ -219,11 +307,13 @@ const onObjectTypeChange = (selectedObjectTypeId) => {
   }
 }
 
-const onObjectChange = (selectedObjectId) => {
+const onObjectChange = async (selectedObjectId) => {
   coordinates.value = { coordStartKm: null, coordStartPk: null, coordEndKm: null, coordEndPk: null }
   objectBounds.value = null
   isInvalidRange.value = false
   isOutOfBounds.value = false
+  form.value.section = null
+  sectionOptions.value = []
 
   if (!selectedObjectId) return
 
@@ -242,10 +332,10 @@ const onObjectChange = (selectedObjectId) => {
   const record = selectedOption.fullRecord;
 
   coordinates.value = {
-    coordStartKm: record.StartKm ?? null, 
-    coordStartPk: record.StartPicket ?? null,
-    coordEndKm: record.FinishKm ?? null,
-    coordEndPk: record.FinishPicket ?? null
+    coordStartKm: parseInt(record.StartKm) || 0,
+    coordStartPk: parseInt(record.StartPicket) || 0,
+    coordEndKm: parseInt(record.FinishKm) || 0,
+    coordEndPk: parseInt(record.FinishPicket) || 0
   }
 
   objectBounds.value = {
@@ -256,6 +346,19 @@ const onObjectChange = (selectedObjectId) => {
     FinishKm: record.FinishKm,
     FinishPicket: record.FinishPicket
   }
+
+  await nextTick(async () => {
+    await loadSections()
+  })
+}
+
+const updateCoordinates = async (newCoords) => {
+  coordinates.value = newCoords
+
+  form.value.section = null
+  sectionOptions.value = []
+  
+  await loadSections()
 }
 
 const validateForm = () => {
@@ -274,6 +377,10 @@ const validateForm = () => {
   }
   if (!form.value.object || !form.value.object.value) {
     notificationStore.showNotification('Не выбран Объект', 'error')
+    return false
+  }
+  if (!form.value.section || !form.value.section.value) {
+    notificationStore.showNotification('Не выбран Участок', 'error')
     return false
   }
 
@@ -333,10 +440,12 @@ const saveData = async () => {
      return
   }
   
-  const selectedEvent = incidentTypeOptions.value.find(opt => opt.value == form.value.incidentType?.value)
+  const selectedCriticality = form.value.criticality;
   const selectedObjectOption = objectOptions.value.find(opt => opt.value == form.value.object?.value)
+  const selectedSection = form.value.section
+  const selectedEvent = incidentTypeOptions.value.find(opt => opt.value == form.value.incidentType?.value)
   
-  if (!selectedEvent || !selectedObjectOption || !selectedObjectOption.fullRecord) {
+  if (!selectedEvent || !selectedObjectOption || !selectedObjectOption.fullRecord || !selectedSection || !selectedCriticality) {
       notificationStore.showNotification('Не удалось получить полные данные для сохранения (внутренняя ошибка)', 'error')
       return
   }
@@ -347,11 +456,14 @@ const saveData = async () => {
     eventName: selectedEvent.label,
     eventId: selectedEvent.id,
     eventPv: selectedEvent.pv,
-    criticalityFv: selectedEvent.fvCriticality,
-    criticalityPv: selectedEvent.pvCriticality,
+    criticalityFv: selectedCriticality.value, // id из loadFactorValForSelect
+    criticalityPv: selectedCriticality.pv,    // pv из loadFactorValForSelect
     
     objectId: objectRecord.objObject,
     objectPv: objectRecord.pvObject,
+
+    objLocationClsSection: selectedSection.value,
+    pvLocationClsSection: selectedSection.pv,
     
     StartKm: coordinates.value.coordStartKm !== null ? parseFloat(coordinates.value.coordStartKm) : 0.0,
     FinishKm: coordinates.value.coordEndKm !== null ? parseFloat(coordinates.value.coordEndKm) : 0.0,
@@ -359,6 +471,7 @@ const saveData = async () => {
     FinishPicket: coordinates.value.coordEndPk !== null ? parseFloat(coordinates.value.coordEndPk) : 0.0,
     
     Description: form.value.description,
+    InfoApplicant: form.value.applicantName,
     
     StartLink: 0.0,
     FinishLink: 0.0,
@@ -388,10 +501,18 @@ const handleOutOfBounds = () => {
 
 onMounted(async () => {
   try {
-    incidentTypeOptions.value = await loadEvents()
-    await loadAllObjects()
+    loadingCriticality.value = true;
+    const [events, criticalityLevels, _] = await Promise.all([
+      loadEvents(),
+      loadCriticalityLevels(),
+      loadAllObjects()
+    ]);
+    incidentTypeOptions.value = events;
+    criticalityOptions.value = criticalityLevels;
   } catch (error) {
     notificationStore.showNotification('Ошибка при загрузке начальных данных', 'error')
+  } finally {
+    loadingCriticality.value = false;
   }
 })
 
