@@ -53,8 +53,8 @@ const props = defineProps({
 const incidentOptions = computed(() => {
   if (!props.incidents) return [];
   return props.incidents
-    .filter(incident => !incident.rawData?.objWorkPlan) // Показываем только инциденты, которым еще не назначена работа
-    .map(incident => ({ label: incident.name, value: incident.id }));
+    .filter(incident => !incident.rawData?.objWorkPlan)
+    .map(incident => ({ label: `${incident.id} - ${incident.name} - ${incident.object}`, value: incident.id }));
 });
 
 const emit = defineEmits(['close', 'assign-work'])
@@ -111,7 +111,6 @@ const saveData = async () => {
     inc => inc.id === form.value.incidentType.value
   );
 
-  // Извлекаем полный объект работы из опций, используя его ID (value)
   const selectedWorkOption = workTypeOptions.value.find(
       work => work.value === form.value.workType.value
   );
@@ -131,7 +130,7 @@ const saveData = async () => {
   try {
       await assignWorkToIncident(
         selectedIncident.rawData, 
-        selectedWorkOption, // Передаем полный объект работы с pv, cls и value
+        selectedWorkOption,
         completionDate
       );
 

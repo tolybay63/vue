@@ -1,6 +1,8 @@
 import axios from "axios";
 
 const API_BASE_URL = import.meta.env.VITE_INCIDENTS_URL;
+const PLAN_URL = import.meta.env.VITE_PLAN_URL;
+const OBJECT_URL = import.meta.env.VITE_OBJECT_URL;
 
 async function fetchUserData() {
   return { id: 1003, pv: 1087 }; 
@@ -89,6 +91,33 @@ export async function loadEvents() {
   }
 }
 
+export async function loadCriticalityLevels() {
+  try {
+    console.log('Вызов метода data/loadFactorValForSelect для Prop_Criticality');
+
+    const response = await axios.post(
+      OBJECT_URL,
+      {
+        method: "data/loadFactorValForSelect",
+        params: ["Prop_Criticality"]
+      },
+      {
+        withCredentials: true
+      }
+    );
+
+    const records = response.data.result?.records || [];
+    return records.map(record => ({
+      ...record,
+      label: record.name,
+      value: record.id, // This will be fvCriticality
+    }));
+  } catch (error) {
+    console.error("Ошибка при загрузке уровней критичности:", error);
+    throw error;
+  }
+}
+
 export async function saveIncident(payloadData) {
   try {
     const user = await fetchUserData();
@@ -109,6 +138,9 @@ export async function saveIncident(payloadData) {
         objUser: user.id,
         fvCriticality: payloadData.criticalityFv,
         pvCriticality: payloadData.criticalityPv,
+        objLocationClsSection: payloadData.objLocationClsSection,
+        pvLocationClsSection: payloadData.pvLocationClsSection,
+        InfoApplicant: payloadData.InfoApplicant,
         StartKm: payloadData.StartKm,
         FinishKm: payloadData.FinishKm,
         StartPicket: payloadData.StartPicket,
@@ -143,6 +175,51 @@ export async function saveIncident(payloadData) {
   }
 }
 
+export async function updateIncident(payloadData) {
+  try {
+    const user = await fetchUserData();
+    
+    const registrationDateTime = getAstanaISOString();
+    const datePart = registrationDateTime.slice(0, 10);
+
+    const payload = {
+      method: "data/saveIncident",
+      params: ["upd", {
+        id: payloadData.id, // id самого инцидента
+        
+        // Обновление полей
+        idInfoApplicant: payloadData.idInfoApplicant,
+        InfoApplicant: payloadData.InfoApplicant,
+        idDescription: payloadData.idDescription,
+        Description: payloadData.Description,
+        idUpdatedAt: payloadData.idUpdatedAt,
+        UpdatedAt: datePart,
+        // Обновление критичности
+        idCriticality: payloadData.idCriticality,
+        pvCriticality: payloadData.criticalityPv,
+        fvCriticality: payloadData.criticalityFv,
+      }]
+    };
+
+    console.log('Отправляемый payload для updateIncident:', JSON.stringify(payload, null, 2));
+
+    const response = await axios.post(
+      API_BASE_URL,
+      payload,
+      { withCredentials: true }
+    );
+
+    if (response.data && response.data.error) {
+        throw new Error(response.data.error.message || JSON.stringify(response.data.error));
+    }
+    
+    return response.data.result;
+  } catch (error) {
+    console.error("Ошибка при обновлении инцидента:", error);
+    throw new Error(error.response?.data?.error?.message || error.message || 'Не удалось обновить инцидент');
+  }
+}
+
 export async function deleteIncident(id) {
   if (!id) {
     throw new Error("ID инцидента для удаления не предоставлен.");
@@ -164,5 +241,68 @@ export async function deleteIncident(id) {
   } catch (error) {
     console.error("Ошибка при удалении инцидента:", error);
     throw new Error(error.response?.data?.error || error.message || 'Не удалось удалить инцидент');
+  }
+}
+
+export async function assignWorkToIncident(incident, work, completionDate) {
+  if (!incident || !work || !completionDate) {
+    throw new Error("Недостаточно данных для назначения работы.");
+  }
+
+  try {
+    const user = await fetchUserData();
+    const today = new Date().toISOString().slice(0, 10);
+    const planDateEnd = new Date(completionDate).toISOString().slice(0, 10);
+
+    const payload = {
+      method: "data/assignPlan",
+      params: [
+        {
+          id: incident.id,
+          cls: incident.cls,
+          pvLocationClsSection: incident.pvLocationClsSection,
+          objLocationClsSection: incident.objLocationClsSection,
+          pvObject: incident.pvObject,
+          objObject: incident.objObject,
+          pvUser: user.pv,
+          objUser: user.id,
+          StartKm: incident.StartKm,
+          FinishKm: incident.FinishKm,
+          StartPicket: incident.StartPicket,
+          FinishPicket: incident.FinishPicket,
+          idStatus: incident.idStatus,
+          name: `${incident.id}-${planDateEnd}`,
+          PlanDateEnd: planDateEnd,
+          CreatedAt: today,
+          UpdatedAt: today,
+          objWork: work.value,
+          pvWork: work.pv,
+          linkCls: work.cls,
+        },
+      ],
+    };
+
+    console.log('Отправка данных для назначения работы:', JSON.stringify(payload, null, 2));
+
+    const response = await axios.post(
+      PLAN_URL,
+      payload,
+      {
+        withCredentials: true,
+      }
+    );
+
+    if (response.data && response.data.error) {
+      // Улучшаем обработку ошибок для получения сообщения
+      const errorMessage = typeof response.data.error === 'object' && response.data.error !== null 
+                           ? response.data.error.message || JSON.stringify(response.data.error) 
+                           : response.data.error;
+      throw new Error(errorMessage || 'Ошибка от сервера при назначении работы');
+    }
+
+    return response.data.result;
+  } catch (error) {
+    console.error("Ошибка при назначении работы инциденту:", error);
+    throw new Error(error.response?.data?.error?.message || error.message || 'Не удалось назначить работу');
   }
 }
