@@ -9,21 +9,13 @@
         class="col-span-2"
         id="incidentType"
         label="Событие / запрос"
-        placeholder="Выберите тип инцидента"
+        placeholder="Введите или выберите тип инцидента"
         v-model="form.incidentType"
-        :options="incidentTypeOptions"
+        :options="computedIncidentTypeOptions"
+        @update:value="onIncidentTypeSelect"
+        filterable
+        @search="handleIncidentSearch"
         :required="true"
-        @update:modelValue="onIncidentTypeChange"
-      />
-
-      <AppDropdown
-        class="col-span-2"
-        id="criticality"
-        label="Критичность"
-        placeholder="Критичность"
-        v-model="form.criticality"
-        :options="criticalityOptions"
-        :loading="loadingCriticality"
       />
 
       <AppDropdown
@@ -70,16 +62,6 @@
         :required="true" 
       />
 
-      <AppDropdown
-        id="section"
-        label="Участок"
-        placeholder="Выберите участок"
-        v-model="form.section"
-        :options="sectionOptions"
-        :loading="loadingSections"
-        :required="true"
-      />
-
       <AppInput 
         class="col-span-2" 
         id="description" 
@@ -103,12 +85,12 @@
 </template>
 
 <script setup>
-import { ref, defineEmits, onMounted, nextTick } from 'vue'
+import { ref, defineEmits, onMounted, nextTick, computed } from 'vue'
 import ModalWrapper from '@/components/layout/Modal/ModalWrapper.vue'
 import AppInput from '@/components/ui/FormControls/AppInput.vue'
-import AppDropdown from '@/components/ui/FormControls/AppDropdown.vue'
+import AppDropdown from '@/components/ui/FormControls/AppDropdown.vue' 
 import CoordinateInputs from '@/components/ui/FormControls/CoordinateInputs.vue'
-import { loadEvents, saveIncident, loadCriticalityLevels } from '@/api/incidentApi'
+import { loadEvents, saveIncident, saveNewEvent } from '@/api/incidentApi'
 import { fetchObjectsForSelect, fetchLocationByCoords } from '@/api/planWorkApi'
 import { useNotificationStore } from '@/stores/notificationStore'
 
@@ -120,10 +102,8 @@ const form = ref({
   place: null,
   objectType: null,
   object: null,
-  section: null,
   description: '',
   applicantName: '',
-  criticality: null,
 })
 
 const coordinates = ref({
@@ -141,28 +121,59 @@ const incidentTypeOptions = ref([])
 const placeOptions = ref([])
 const objectTypeOptions = ref([])
 const objectOptions = ref([])
-const sectionOptions = ref([])
-const criticalityOptions = ref([])
 const allLoadedRecords = ref([])
 const filteredRecordsByPlace = ref([])
 
 const loadingPlaces = ref(false)
 const loadingObjectTypes = ref(false)
 const loadingObjects = ref(false)
-const loadingSections = ref(false)
-const loadingCriticality = ref(false)
+const searchQuery = ref('');
 
-const onIncidentTypeChange = (selectedIncident) => {
-  form.value.criticality = null;
+const computedIncidentTypeOptions = computed(() => {
+  if (searchQuery.value && !incidentTypeOptions.value.some(opt => opt.label.toLowerCase() === searchQuery.value.toLowerCase())) {
+    return [
+      {
+        label: `Создать "${searchQuery.value}"`,
+        value: `__CREATE__${searchQuery.value}`,
+        isCreate: true
+      },
+      ...incidentTypeOptions.value
+    ];
+  }
+  return incidentTypeOptions.value;
+});
 
-  if (selectedIncident && selectedIncident.nameCriticality) {
-    // fvCriticality из события соответствует value (id) в опциях критичности
-    const foundCriticality = criticalityOptions.value.find(
-      c => c.value === selectedIncident.fvCriticality
-    );
-    if (foundCriticality) {
-      form.value.criticality = foundCriticality;
+const handleIncidentSearch = (query) => {
+  searchQuery.value = query;
+};
+
+const onIncidentTypeSelect = async (selectedValue, selectedOption) => {
+  if (typeof selectedValue === 'string' && selectedValue.startsWith('__CREATE__')) {
+    const labelToCreate = selectedValue.substring('__CREATE__'.length);
+    
+    // Сбрасываем v-model, чтобы "Создать..." не оставалось в поле
+    form.value.incidentType = null;
+    searchQuery.value = '';
+
+    try {
+      if (!labelToCreate.trim()) return;
+      
+      const newEvent = await saveNewEvent(labelToCreate);
+      incidentTypeOptions.value.push(newEvent);
+      
+      // Устанавливаем только что созданный элемент как выбранный
+      await nextTick();
+      // Важно: присваиваем полный объект, а не только его value
+      form.value.incidentType = incidentTypeOptions.value.find(opt => opt.value === newEvent.value);
+      notificationStore.showNotification(`Событие "${labelToCreate}" успешно создано`, 'success');
+    } catch (error) {
+      notificationStore.showNotification(`Ошибка при создании события: ${error.message}`, 'error');
+      form.value.incidentType = null; // Очищаем поле в случае ошибки
     }
+  } else {
+    // Обычный выбор из списка
+    form.value.incidentType = selectedOption;
+    searchQuery.value = '';
   }
 };
 
@@ -194,55 +205,11 @@ const loadAllObjects = async () => {
   }
 }
 
-const loadSections = async (workId = 0) => {
-  form.value.section = null
-  sectionOptions.value = []
-  
-  if (!coordinates.value.coordStartKm || !coordinates.value.coordEndKm) {
-    return
-  }
-
-  loadingSections.value = true
-  try {
-    const sections = await fetchLocationByCoords(
-      workId,
-      coordinates.value.coordStartKm,
-      coordinates.value.coordEndKm,
-      coordinates.value.coordStartPk || 0,
-      coordinates.value.coordEndPk || 0
-    )
-
-    if (Array.isArray(sections) && sections.length > 0) {
-      sectionOptions.value = sections.map(s => ({
-        label: s.name || s.label,
-        value: s.id || s.value,
-        pv: s.pv,
-        fullRecord: s
-      }))
-
-      form.value.section = sections.length === 1 ? sectionOptions.value[0] : null
-    } else {
-      sectionOptions.value = []
-      form.value.section = null
-      notificationStore.showNotification('Не найден участок по указанным координатам', 'warning')
-    }
-  } catch (error) {
-    console.error('Ошибка при загрузке участков:', error)
-    notificationStore.showNotification('Ошибка при загрузке участков', 'error')
-    sectionOptions.value = []
-    form.value.section = null
-  } finally {
-    loadingSections.value = false
-  }
-}
-
 const onPlaceChange = (selectedPlaceId) => {
   form.value.objectType = null
   form.value.object = null
-  form.value.section = null
   objectTypeOptions.value = []
   objectOptions.value = []
-  sectionOptions.value = []
   filteredRecordsByPlace.value = []
   coordinates.value = { coordStartKm: null, coordStartPk: null, coordEndKm: null, coordEndPk: null }
   objectBounds.value = null
@@ -277,9 +244,7 @@ const onPlaceChange = (selectedPlaceId) => {
 
 const onObjectTypeChange = (selectedObjectTypeId) => {
   form.value.object = null
-  form.value.section = null
   objectOptions.value = []
-  sectionOptions.value = []
   coordinates.value = { coordStartKm: null, coordStartPk: null, coordEndKm: null, coordEndPk: null }
   objectBounds.value = null
   isInvalidRange.value = false
@@ -312,8 +277,6 @@ const onObjectChange = async (selectedObjectId) => {
   objectBounds.value = null
   isInvalidRange.value = false
   isOutOfBounds.value = false
-  form.value.section = null
-  sectionOptions.value = []
 
   if (!selectedObjectId) return
 
@@ -347,18 +310,10 @@ const onObjectChange = async (selectedObjectId) => {
     FinishPicket: record.FinishPicket
   }
 
-  await nextTick(async () => {
-    await loadSections()
-  })
 }
 
 const updateCoordinates = async (newCoords) => {
   coordinates.value = newCoords
-
-  form.value.section = null
-  sectionOptions.value = []
-  
-  await loadSections()
 }
 
 const validateForm = () => {
@@ -377,10 +332,6 @@ const validateForm = () => {
   }
   if (!form.value.object || !form.value.object.value) {
     notificationStore.showNotification('Не выбран Объект', 'error')
-    return false
-  }
-  if (!form.value.section || !form.value.section.value) {
-    notificationStore.showNotification('Не выбран Участок', 'error')
     return false
   }
 
@@ -440,12 +391,10 @@ const saveData = async () => {
      return
   }
   
-  const selectedCriticality = form.value.criticality;
   const selectedObjectOption = objectOptions.value.find(opt => opt.value == form.value.object?.value)
-  const selectedSection = form.value.section
   const selectedEvent = incidentTypeOptions.value.find(opt => opt.value == form.value.incidentType?.value)
   
-  if (!selectedEvent || !selectedObjectOption || !selectedObjectOption.fullRecord || !selectedSection || !selectedCriticality) {
+  if (!selectedEvent || !selectedObjectOption || !selectedObjectOption.fullRecord) {
       notificationStore.showNotification('Не удалось получить полные данные для сохранения (внутренняя ошибка)', 'error')
       return
   }
@@ -456,14 +405,13 @@ const saveData = async () => {
     eventName: selectedEvent.label,
     eventId: selectedEvent.id,
     eventPv: selectedEvent.pv,
-    criticalityFv: selectedCriticality.value, // id из loadFactorValForSelect
-    criticalityPv: selectedCriticality.pv,    // pv из loadFactorValForSelect
+
+    // Добавляем критичность из выбранного события
+    criticalityFv: selectedEvent.fvCriticality,
+    criticalityPv: selectedEvent.pvCriticality,
     
     objectId: objectRecord.objObject,
     objectPv: objectRecord.pvObject,
-
-    objLocationClsSection: selectedSection.value,
-    pvLocationClsSection: selectedSection.pv,
     
     StartKm: coordinates.value.coordStartKm !== null ? parseFloat(coordinates.value.coordStartKm) : 0.0,
     FinishKm: coordinates.value.coordEndKm !== null ? parseFloat(coordinates.value.coordEndKm) : 0.0,
@@ -501,18 +449,13 @@ const handleOutOfBounds = () => {
 
 onMounted(async () => {
   try {
-    loadingCriticality.value = true;
-    const [events, criticalityLevels, _] = await Promise.all([
+    const [events, _] = await Promise.all([
       loadEvents(),
-      loadCriticalityLevels(),
       loadAllObjects()
     ]);
     incidentTypeOptions.value = events;
-    criticalityOptions.value = criticalityLevels;
   } catch (error) {
     notificationStore.showNotification('Ошибка при загрузке начальных данных', 'error')
-  } finally {
-    loadingCriticality.value = false;
   }
 })
 

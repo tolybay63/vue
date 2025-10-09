@@ -295,7 +295,6 @@ const validateMinMax = () => {
 const closeModal = () => { emit('close'); };
 
 const handleDelete = () => {
-    console.log('Кнопка "Удалить" в модале WorkCardInfoModal нажата. Показ модала подтверждения.');
     showConfirmModal.value = true;
 };
 
@@ -315,10 +314,7 @@ const onConfirmDelete = async () => {
   }
 
   try {
-    console.log(`Попытка удаления записи осмотра с ID: ${recordId}`);
     await deleteFaultOrParameter(recordId); 
-    
-    console.log('Удаление успешно.');
     notificationStore.showNotification('Карточка осмотра успешно удалена!', 'success');
     emit('delete-work'); 
 
@@ -497,7 +493,7 @@ const saveWork = async () => {
       notificationStore.showNotification('Необходимо выбрать компонент и дефект!', 'error');
       return;
     }
-    if (!defectRecord.value.startCoordinates.coordStartKm || !defectRecord.value.startCoordinates.coordStartPk) {
+    if (defectRecord.value.startCoordinates.coordStartKm === null || defectRecord.value.startCoordinates.coordStartPk === null || defectRecord.value.startCoordinates.coordStartPk === '') {
       notificationStore.showNotification('Необходимо указать координаты дефекта!', 'error');
       return;
     }
@@ -559,7 +555,7 @@ const saveWork = async () => {
       notificationStore.showNotification('Необходимо выбрать компонент и параметр!', 'error');
       return;
     }
-    if (!parameterRecord.value.startCoordinates.coordStartKm || !parameterRecord.value.startCoordinates.coordStartPk) {
+    if (parameterRecord.value.startCoordinates.coordStartKm === null || parameterRecord.value.startCoordinates.coordStartPk === null || parameterRecord.value.startCoordinates.coordStartPk === '') {
       notificationStore.showNotification('Необходимо указать координаты параметра!', 'error');
       return;
     }

@@ -31,6 +31,15 @@ function getAstanaISOString() {
   return isoString;
 }
 
+function formatDateToYYYYMMDD(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export async function loadIncidents(date = "2025-07-30", periodType = 11) {
   const objLocation = localStorage.getItem("objLocation");
 
@@ -91,6 +100,40 @@ export async function loadEvents() {
   }
 }
 
+export async function saveNewEvent(eventName) {
+  try {
+    const payload = {
+      method: "data/saveEvent",
+      params: ["ins", { "name": eventName }]
+    };
+
+    console.log('Отправляемый payload для saveNewEvent:', JSON.stringify(payload, null, 2));
+
+    const response = await axios.post(
+      API_BASE_URL,
+      payload,
+      {
+        withCredentials: true
+      }
+    );
+
+    if (response.data && response.data.error) {
+      const error = response.data.error;
+      throw new Error(error.message || JSON.stringify(error));
+    }
+
+    // Предполагаем, что сервер возвращает ID созданной записи
+    const newRecordId = response.data.result?.records?.[0]?.id;
+    if (!newRecordId) {
+      throw new Error('Сервер не вернул ID для нового события.');
+    }
+    return { id: newRecordId, name: eventName, label: eventName, value: newRecordId };
+  } catch (error) {
+    console.error("Ошибка при сохранении нового события:", error);
+    throw error;
+  }
+}
+
 export async function loadCriticalityLevels() {
   try {
     console.log('Вызов метода data/loadFactorValForSelect для Prop_Criticality');
@@ -110,7 +153,7 @@ export async function loadCriticalityLevels() {
     return records.map(record => ({
       ...record,
       label: record.name,
-      value: record.id, // This will be fvCriticality
+      value: record.id,
     }));
   } catch (error) {
     console.error("Ошибка при загрузке уровней критичности:", error);
@@ -136,8 +179,6 @@ export async function saveIncident(payloadData) {
         objObject: payloadData.objectId,
         pvUser: user.pv,
         objUser: user.id,
-        fvCriticality: payloadData.criticalityFv,
-        pvCriticality: payloadData.criticalityPv,
         objLocationClsSection: payloadData.objLocationClsSection,
         pvLocationClsSection: payloadData.pvLocationClsSection,
         InfoApplicant: payloadData.InfoApplicant,
@@ -152,6 +193,12 @@ export async function saveIncident(payloadData) {
         UpdatedAt: datePart,
         RegistrationDateTime: registrationDateTime,
       }]
+    };
+
+    // Добавляем критичность, если она есть
+    if (payloadData.criticalityFv !== undefined && payloadData.criticalityPv !== undefined) {
+      payload.params[1].fvCriticality = payloadData.criticalityFv;
+      payload.params[1].pvCriticality = payloadData.criticalityPv;
     };
     
     console.log('Отправляемый payload для saveIncident:', JSON.stringify(payload, null, 2));
@@ -244,15 +291,15 @@ export async function deleteIncident(id) {
   }
 }
 
-export async function assignWorkToIncident(incident, work, completionDate) {
-  if (!incident || !work || !completionDate) {
+export async function assignWorkToIncident(incident, work, completionDate, selectedCriticality, selectedSection) {
+  if (!incident || !work || !completionDate || !selectedCriticality || !selectedSection) {
     throw new Error("Недостаточно данных для назначения работы.");
   }
-
+  
   try {
     const user = await fetchUserData();
-    const today = new Date().toISOString().slice(0, 10);
-    const planDateEnd = new Date(completionDate).toISOString().slice(0, 10);
+    const today = formatDateToYYYYMMDD(new Date());
+    const planDateEnd = formatDateToYYYYMMDD(completionDate);
 
     const payload = {
       method: "data/assignPlan",
@@ -260,8 +307,8 @@ export async function assignWorkToIncident(incident, work, completionDate) {
         {
           id: incident.id,
           cls: incident.cls,
-          pvLocationClsSection: incident.pvLocationClsSection,
-          objLocationClsSection: incident.objLocationClsSection,
+          pvLocationClsSection: selectedSection.pv, 
+          objLocationClsSection: selectedSection.value,
           pvObject: incident.pvObject,
           objObject: incident.objObject,
           pvUser: user.pv,
@@ -278,6 +325,8 @@ export async function assignWorkToIncident(incident, work, completionDate) {
           objWork: work.value,
           pvWork: work.pv,
           linkCls: work.cls,
+          fvCriticality: selectedCriticality.value, 
+          pvCriticality: selectedCriticality.pv,
         },
       ],
     };
