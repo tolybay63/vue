@@ -161,6 +161,37 @@ export async function loadCriticalityLevels() {
   }
 }
 
+export async function loadWorksForIncidentObject(objObject) {
+  if (!objObject) {
+    console.warn("loadWorksForIncidentObject вызван без objObject");
+    return [];
+  }
+  try {
+    console.log('Вызов метода data/loadWorkOnObjectServedForSelect для objObject:', objObject);
+
+    const response = await axios.post(
+      PLAN_URL,
+      {
+        method: "data/loadWorkOnObjectServedForSelect",
+        params: [objObject]
+      },
+      {
+        withCredentials: true
+      }
+    );
+
+    const records = response.data.result?.records || [];
+    return records.map(record => ({
+      ...record,
+      label: record.fullname,
+      value: record.id,
+    }));
+  } catch (error) {
+    console.error("Ошибка при загрузке работ для объекта инцидента:", error);
+    throw error;
+  }
+}
+
 export async function saveIncident(payloadData) {
   try {
     const user = await fetchUserData();
@@ -186,8 +217,8 @@ export async function saveIncident(payloadData) {
         FinishKm: payloadData.FinishKm,
         StartPicket: payloadData.StartPicket,
         FinishPicket: payloadData.FinishPicket,
-        StartLink: payloadData.StartLink || 0.0,
-        FinishLink: payloadData.FinishLink || 0.0,
+        StartLink: payloadData.StartLink,
+        FinishLink: payloadData.FinishLink,
         Description: payloadData.Description,
         CreatedAt: datePart,
         UpdatedAt: datePart,

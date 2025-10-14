@@ -1,6 +1,7 @@
 <template>
   <ModalWrapper
     title="Определение работы"
+    modal-class="modal-assign-work"
     @close="closeModal"
     @save="saveData"
   >
@@ -16,6 +17,11 @@
         @update:value="onIncidentTypeChange"
       />
 
+      <IncidentHeaderInfo
+        class="col-span-2"
+        :incident="selectedIncident"
+      />
+
       <AppDropdown
         class="col-span-2"
         id="workType"
@@ -24,6 +30,7 @@
         v-model="form.workType"
         :options="workTypeOptions"
         :loading="loadingWorks"
+        @update:value="onWorkTypeChange"
         :required="true"
       />
 
@@ -63,9 +70,10 @@ import { ref, defineEmits, defineProps, computed, onMounted } from 'vue'
 import ModalWrapper from '@/components/layout/Modal/ModalWrapper.vue'
 import AppDropdown from '@/components/ui/FormControls/AppDropdown.vue'
 import AppDatePicker from '@/components/ui/FormControls/AppDatePicker.vue'
+import IncidentHeaderInfo from '@/components/ui/IncidentHeaderInfo.vue'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { fetchWorks, fetchLocationByCoords } from '@/api/planWorkApi' 
-import { assignWorkToIncident, loadCriticalityLevels } from '@/api/incidentApi'
+import { fetchLocationByCoords } from '@/api/planWorkApi' 
+import { assignWorkToIncident, loadCriticalityLevels, loadWorksForIncidentObject } from '@/api/incidentApi'
 
 const props = defineProps({
   incidents: { type: Array, default: () => [] }
@@ -78,7 +86,7 @@ const incidentOptions = computed(() => {
     .map(incident => ({
       label: `${incident.id} - ${incident.name} - ${incident.object}`,
       value: incident.id,
-      fullIncidentData: incident.rawData
+      fullIncidentData: incident
     }));
 });
 
@@ -99,6 +107,8 @@ const form = ref({
   section: null,
 })
 
+const selectedIncident = ref(null);
+
 const workTypeOptions = ref([])
 const loadingWorks = ref(false)
 const criticalityOptions = ref([])
@@ -110,13 +120,33 @@ const onIncidentTypeChange = async (selectedIncidentValue) => {
   form.value.criticality = null;
   form.value.section = null;
   sectionOptions.value = [];
+  // Очищаем список работ при смене инцидента
+  form.value.workType = null;
+  workTypeOptions.value = [];
+
+  selectedIncident.value = null;
 
   if (!selectedIncidentValue) return;
 
   const selectedIncidentOption = incidentOptions.value.find(opt => opt.value === selectedIncidentValue);
   if (!selectedIncidentOption || !selectedIncidentOption.fullIncidentData) return;
 
-  const incidentData = selectedIncidentOption.fullIncidentData;
+  selectedIncident.value = selectedIncidentOption.fullIncidentData;
+  const incidentData = selectedIncidentOption.fullIncidentData.rawData;
+
+  // Загружаем работы для объекта этого инцидента
+  if (incidentData.objObject) {
+    loadingWorks.value = true;
+    try {
+      const works = await loadWorksForIncidentObject(incidentData.objObject);
+      workTypeOptions.value = works;
+      if (works.length === 0) {
+        notificationStore.showNotification('Для объекта этого инцидента нет подходящих работ.', 'warning');
+      }
+    } finally {
+      loadingWorks.value = false;
+    }
+  }
 
   // Устанавливаем критичность из данных инцидента
   if (incidentData.fvCriticality) {
@@ -136,12 +166,21 @@ const onIncidentTypeChange = async (selectedIncidentValue) => {
     coordEndPk: incidentData.FinishPicket,
   };
 
-  if (coords.coordStartKm !== null && coords.coordEndKm !== null) {
-    await loadSections(coords);
+  // Загружаем участки, если выбрана и работа
+  if (form.value.workType?.value && coords.coordStartKm !== null && coords.coordEndKm !== null) {
+    await loadSections(coords, form.value.workType.value);
   }
 };
 
-const loadSections = async (coords) => {
+const onWorkTypeChange = async (selectedWorkValue) => {
+  const selectedIncidentOption = incidentOptions.value.find(opt => opt.value === form.value.incidentType?.value);
+  if (!selectedIncidentOption || !selectedIncidentOption.fullIncidentData) return;
+
+  const incidentData = selectedIncidentOption.fullIncidentData.rawData;
+  await loadSections({ coordStartKm: incidentData.StartKm, coordEndKm: incidentData.FinishKm, coordStartPk: incidentData.StartPicket, coordEndPk: incidentData.FinishPicket }, selectedWorkValue);
+};
+
+const loadSections = async (coords, workId) => {
   form.value.section = null;
   sectionOptions.value = [];
 
@@ -151,9 +190,8 @@ const loadSections = async (coords) => {
 
   loadingSections.value = true;
   try {
-    // workId = 0 для инцидентов при получении участков
     const sections = await fetchLocationByCoords(
-      0, // workId
+      workId,
       coords.coordStartKm,
       coords.coordEndKm,
       coords.coordStartPk || 0,
@@ -186,24 +224,14 @@ const loadSections = async (coords) => {
 onMounted(async () => {
   try {
     loadingWorks.value = true
-    loadingCriticality.value = true
-    const [works, criticalityLevels] = await Promise.all([
-      fetchWorks(),
-      loadCriticalityLevels()
-    ]);
-
-    workTypeOptions.value = works;
+    loadingCriticality.value = true;
+    const criticalityLevels = await loadCriticalityLevels();
     criticalityOptions.value = criticalityLevels;
-
-    if (works.length === 0) {
-      notificationStore.showNotification('Нет доступных работ для выбора', 'warning');
-    } else {
-      // notificationStore.showNotification('Нет доступных работ для выбора', 'warning')
-    }
   } catch (error) {
     notificationStore.showNotification('Ошибка при загрузке данных', 'error');
   } finally {
-    loadingWorks.value = false
+    // Загрузка работ теперь происходит при выборе инцидента
+    loadingWorks.value = false;
     loadingCriticality.value = false;
   }
 })
@@ -273,7 +301,7 @@ const saveData = async () => {
   
   try {
       await assignWorkToIncident(
-        selectedIncidentOption.fullIncidentData,
+        selectedIncidentOption.fullIncidentData.rawData,
         selectedWorkOption,
         completionDate,
         selectedCriticality,
@@ -300,6 +328,10 @@ const closeModal = () => {
   gap: 16px;
   padding: 0 32px 32px;
   background-color: #f9fafb;
+}
+
+.modal-assign-work .form-section {
+  padding-top: 32px;
 }
 
 .col-span-2 {

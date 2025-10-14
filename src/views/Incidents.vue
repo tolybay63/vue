@@ -39,17 +39,22 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import TableWrapper from '@/components/layout/Table/TableWrapper.vue';
 import { loadIncidents } from '@/api/incidentApi'; 
 import { loadPeriodTypes } from '@/api/periodApi';
+import { usePermissions } from '@/api/usePermissions';
 
 import ModalAddIncident from '@/modals/ModalAddIncident.vue'; 
 import ModalIncidentInfo from '@/modals/ModalIncidentInfo.vue'; 
 import ModalAssignWork from '@/modals/ModalAssignWork.vue';
 
 const router = useRouter();
+
+const { hasPermission } = usePermissions();
+const canInsert = computed(() => hasPermission('inc:ins'));
+const canAssign = computed(() => hasPermission('inc:assign'));
 
 const limit = 10;
 const tableWrapperRef = ref(null);
@@ -176,6 +181,7 @@ const loadIncidentsWrapper = async ({ page, limit, filters: filterValues }) => {
         date: date,
         time: time ? time.substring(0, 8) : null,
         description: r.Description,
+        source: r.objFault || r.objParameterLog,
         rawData: r,
         hasDefects: r.nameFlagDefect,
         fullNameWork: r.fullNameWork,
@@ -221,6 +227,7 @@ const getRowClassFn = (row) => {
 const columns = [
   { key: 'id', label: '№' },
   { key: 'name', label: 'Наименование' },
+  { key: 'source', label: 'Ссылка на источник' },
   { key: 'nameCls', label: 'Источник' },
   { key: 'object', label: 'Объект' },
   { key: 'coordinates', label: 'Координаты' },
@@ -234,13 +241,14 @@ const columns = [
   { key: 'FactDateEnd', label: 'Дата (факт)' },
 ];
 
-const tableActions = [
+const tableActions = computed(() => [
   {
     label: 'Добавить запись',
     icon: 'Plus',
     onClick: () => {
       showAddIncidentModal.value = true;
     },
+    show: canInsert.value,
   },
   {
     label: 'Назначить работу',
@@ -248,13 +256,15 @@ const tableActions = [
     onClick: () => {
       showAssignWorkModal.value = true;
     },
+    show: canAssign.value,
   },
   {
     label: 'Экспорт',
     icon: 'Download',
     onClick: () => console.log('Экспортирование инцидентов...'),
+    show: true, // Всегда показывать
   },
-];
+].filter(action => action.show));
 </script>
 
 <style scoped>

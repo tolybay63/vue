@@ -2,8 +2,8 @@
   <ModalWrapper
     title="Информация об инциденте"
     @close="closeModal"
-    :showSaveButton="true"
-    :showDelete="true"
+    :show-save="canUpdate"
+    :show-delete="canDelete"
     @save="saveChanges"
     @delete="onDeleteClicked" 
   >
@@ -57,38 +57,40 @@
       
       <AppInput
         id="applicantName"
-        label="ФИО заявителя"
+        label="Информация о заявителе"
         v-model="form.applicantName"
         :disabled="false"
       />
-      
+
+      <Transition name="modal-fade">
+        <ConfirmationModal
+          v-if="showConfirmModal"
+          title="Удаление инцидента"
+          :message="`Вы действительно хотите удалить инцидент?`"
+          @confirm="onConfirmDelete"
+          @cancel="onCancelDelete"
+        />
+      </Transition>
       <AppInput
         id="date"
-        label="Дата регистрации"
-        v-model="form.date"
+        label="Дата и время регистрации"
+        :model-value="formattedRegistrationDateTime"
         :disabled="true"
       />
 
     </div>
   </ModalWrapper>
-
-  <ConfirmationModal
-    v-if="showConfirmModal"
-    title="Удаление инцидента"
-    :message="`Вы действительно хотите удалить инцидент?`"
-    @confirm="onConfirmDelete"
-    @cancel="onCancelDelete"
-  />
 </template>
 
 <script setup>
-import { ref, onMounted, defineEmits, defineProps } from 'vue'
+import { ref, onMounted, defineEmits, defineProps, computed } from 'vue'
 import ModalWrapper from '@/components/layout/Modal/ModalWrapper.vue'
 import AppInput from '@/components/ui/FormControls/AppInput.vue'
 import AppDropdown from '@/components/ui/FormControls/AppDropdown.vue'
 import FullCoordinates from '@/components/ui/FormControls/FullCoordinates.vue'
 import ConfirmationModal from './ConfirmationModal.vue' 
 import { useNotificationStore } from '@/stores/notificationStore'
+import { usePermissions } from '@/api/usePermissions';
 import { deleteIncident, loadCriticalityLevels, updateIncident } from '@/api/incidentApi' 
 
 const emit = defineEmits(['close', 'deleted'])
@@ -103,6 +105,10 @@ const showConfirmModal = ref(false)
 const notificationStore = useNotificationStore()
 const criticalityOptions = ref([])
 const loadingCriticality = ref(false)
+
+const { hasPermission } = usePermissions();
+const canUpdate = computed(() => hasPermission('inc:upd'));
+const canDelete = computed(() => hasPermission('inc:del'));
 
 const initialCoordinates = { 
   coordStartKm: null, 
@@ -127,6 +133,15 @@ const form = ref({
   applicantName: 'Неизвестно', 
   parsedCoordinates: { ...initialCoordinates },
 })
+
+const formattedRegistrationDateTime = computed(() => {
+  if (form.value.date && form.value.time) {
+    const [year, month, day] = form.value.date.split('-');
+    const timePart = form.value.time.substring(0, 5); // HH:mm
+    return `${timePart}, ${day}.${month}.${year}`;
+  }
+  return 'Дата и время не указаны';
+});
 
 const closeModal = () => {
   emit('close')
@@ -263,5 +278,27 @@ const onConfirmDelete = async () => {
 
 .col-span-2 {
   grid-column: span 2;
+}
+
+/* Стили для анимации вложенного модального окна */
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+.modal-fade-enter-active .modal-wrapper,
+.modal-fade-leave-active .modal-wrapper {
+  transition: transform 0.3s ease;
+}
+
+.modal-fade-enter-from .modal-wrapper,
+.modal-fade-leave-to .modal-wrapper {
+  transform: scale(0.95);
+  opacity: 0;
 }
 </style>
