@@ -25,7 +25,7 @@
               <AppInput v-model="username" placeholder="Логин" />
               <AppInput v-model="password" type="password" placeholder="Пароль" />
             </div>
-  
+ 
             <MainButton :label="'ВОЙТИ'" :loading="loading" type="submit" />
           </form>
         </div>
@@ -63,6 +63,9 @@ export default {
   },
   methods: {
   async handleLogin() {
+    // Вставлено дополнительное условие из Логина №1 для предотвращения повторных вызовов
+    if (this.loading) return; 
+    
     const notify = useNotificationStore()
     this.loading = true
 
@@ -71,7 +74,8 @@ export default {
       const loginResponse = await login(this.username, this.password)
 
       const curUser = await getCurrentUser()
-      const userId = curUser?.id
+      // ИЗМЕНЕНИЕ: Используем логику из Логина №1 - ищем ID внутри 'result'
+      const userId = curUser?.result?.id 
       if (!userId) throw new Error("Не удалось получить ID пользователя")
 
       const personnalInfo = await getPersonnalInfo(userId)
