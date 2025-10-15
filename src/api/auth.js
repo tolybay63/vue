@@ -33,7 +33,7 @@ export async function getCurrentUser() {
     }
   );
 
-  return response.data.result;
+  return response.data;
 }
 
 export async function getPersonnalInfo(userId) {
@@ -56,5 +56,3 @@ export async function getPersonnalInfo(userId) {
     throw err;
   }
 }
-
-

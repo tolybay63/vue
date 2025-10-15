@@ -22,12 +22,12 @@ export default defineConfig(({ mode }) => {
       port: parseInt(process.env.VITE_DEV_SERVER_PORT) || 3000,
       proxy: {
         '/auth': {
-          target: `http://${process.env.VITE_DEV_SERVER_HOST}:${process.env.VITE_DEV_NSI_PORT}`,
+          target: `http://${process.env.VITE_DEV_SERVER_HOST}:${process.env.VITE_DEV_PERSONAL_PORT}`,
           changeOrigin: true,
           secure: false,
         },
         '/userapi': {
-          target: `http://${process.env.VITE_DEV_SERVER_HOST}:${process.env.VITE_DEV_NSI_PORT}/api`,
+          target: `http://${process.env.VITE_DEV_SERVER_HOST}:${process.env.VITE_DEV_PERSONAL_PORT}/api`,
           changeOrigin: true,
           rewrite: path => path.replace(/^\/userapi/, ''),
           secure: false,

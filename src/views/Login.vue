@@ -88,7 +88,7 @@ export default {
       localStorage.setItem("personnalInfo", JSON.stringify(info))
 
       notify.showNotification("Успешный вход!", "success")
-      this.$router.push("/work-plan")
+      this.$router.push("/main")
     } catch (err) {
       console.error("Ошибка при входе:", err)
 
