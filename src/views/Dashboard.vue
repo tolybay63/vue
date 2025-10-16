@@ -279,6 +279,8 @@ onMounted(() => {
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  max-width: 100%; /* Гарантирует, что карточка не превысит ширину своего контейнера */
+  overflow-x: auto; /* Позволяет горизонтальную прокрутку внутри карточки, если содержимое слишком широкое */
 }
 .widget-card.no-padding {
   padding: 0;
@@ -352,4 +354,11 @@ onMounted(() => {
   color: #718096;
   padding: 16px 0;
 }
+
+@media (max-width: 480px) {
+  .main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 </style>
