@@ -131,7 +131,6 @@ const getDaysRemainingText = (planDateEnd) => {
   } else if (diffDays === 0) {
     return 'Завершается сегодня';
   } else {
-    // Простое правило для склонения
     const lastDigit = diffDays % 10;
     const lastTwoDigits = diffDays % 100;
     if (lastTwoDigits >= 11 && lastTwoDigits <= 19) return `Осталось ${diffDays} дней`;
@@ -295,6 +294,11 @@ onMounted(() => {
   align-items: flex-start;
   gap: 16px;
   padding: 12px 12px;
+  /* Добавьте это для предотвращения выделения текста при двойном клике */
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* IE10+ */
+  user-select: none;         /* Standard */
 }
 .feed-item:not(:last-child) {
   border-bottom: 1px solid #e2e8f0;
