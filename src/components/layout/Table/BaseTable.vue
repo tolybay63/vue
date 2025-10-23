@@ -89,7 +89,8 @@ const tableWidthClass = computed(() => {
 .table-container {
   overflow-x: auto;
   overflow-y: auto;
-  max-height: 70vh;
+  /* Reduced max-height slightly for better fit on various screens */
+  max-height: 65vh; 
   background: #fff;
   border-radius: 12px;
   border: 1px solid #e2e8f0;
@@ -188,5 +189,10 @@ th, td {
   text-align: center;
   padding: 20px 0;
   color: #718096;
+}
+
+.styled-table :deep(.label-strong) {
+  font-weight: 600;
+  color: #374151;
 }
 </style>
