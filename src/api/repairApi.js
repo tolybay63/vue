@@ -36,11 +36,7 @@ export async function loadPlanCorrectional(date = "2025-07-30", periodType = 11)
 
   const result = response.data.result;
 
-  if (result && result.store && Array.isArray(result.store.records)) {
-    return result.store.records;
-  }
-
-  return [];
+  return result || { store: { records: [] }, resource: { records: [] } };
 }
 
 export async function loadDateWorkPlanCorrectional(selectedSectionId, pv) {
@@ -172,7 +168,7 @@ export async function loadMaterials() {
 
     const records = response.data.result?.records || [];
     return records.map((record) => ({
-      label: record.fullName, 
+      label: record.name, 
       value: record.id,      
       cls: record.cls,      
       pv: record.pv,        
@@ -303,7 +299,7 @@ export async function loadExternalServices() {
 
     const records = response.data.result?.records || [];
     return records.map((record) => ({
-      label: record.fullName, 
+      label: record.fullName,
       value: record.id,      
       cls: record.cls,      
       pv: record.pv,        

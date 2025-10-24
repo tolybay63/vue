@@ -1,7 +1,7 @@
 <template>
   <div class="plan-form-page">
     <div class="header">
-      <BackButton @click="goToInspections" />
+      <BackButton @click="goBack" />
       <h1>Запись в Журнал выполнения работ</h1>
     </div>
     <div class="filters-section">
@@ -249,8 +249,8 @@ const columns = [
   },
 ];
 
-const goToInspections = () => {
-  router.push({ name: 'Inspections' });
+const goBack = () => {
+  router.push({ name: 'ResourcePlanning' });
 };
 
 const loadWorkPlanForDate = async () => {
