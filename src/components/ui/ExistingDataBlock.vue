@@ -26,6 +26,23 @@
             <span class="data-cell volume-service-cell">ОБЪЕМ</span>
           </template>
 
+          <template v-else-if="dataType === 'personal' || dataType === 'personnel'">
+            <span class="data-cell position-cell">ДОЛЖНОСТЬ</span>
+            <span class="data-cell quantity-cell">КОЛИЧЕСТВО</span>
+            <span class="data-cell hours-cell">ЧАСЫ</span>
+          </template>
+
+          <template v-else-if="dataType === 'equipment'">
+            <span class="data-cell equipment-type-cell">ТИП ТЕХНИКИ</span>
+            <span class="data-cell quantity-cell">КОЛИЧЕСТВО</span>
+            <span class="data-cell hours-cell">ЧАСЫ</span>
+          </template>
+
+          <template v-else-if="dataType === 'tools'">
+            <span class="data-cell tool-type-cell">ИНСТРУМЕНТ</span>
+            <span class="data-cell quantity-cell">КОЛИЧЕСТВО</span>
+          </template>
+
           <template v-else>
             <span class="data-cell date-cell">ДАТА</span>
             <span class="data-cell coords-cell">КООРДИНАТЫ</span>
@@ -59,6 +76,23 @@
             <span class="data-cell volume-service-cell">{{ item.volume || '—' }}</span>
           </template>
 
+          <template v-else-if="dataType === 'personal' || dataType === 'personnel'">
+            <span class="data-cell position-cell">{{ item.position || '—' }}</span>
+            <span class="data-cell quantity-cell">{{ item.count || '—' }}</span>
+            <span class="data-cell hours-cell">{{ item.hours || '—' }}</span>
+          </template>
+
+          <template v-else-if="dataType === 'equipment'">
+            <span class="data-cell equipment-type-cell">{{ item.equipmentType || '—' }}</span>
+            <span class="data-cell quantity-cell">{{ item.count || '—' }}</span>
+            <span class="data-cell hours-cell">{{ item.hours || '—' }}</span>
+          </template>
+
+          <template v-else-if="dataType === 'tools'">
+            <span class="data-cell tool-type-cell">{{ item.toolType || '—' }}</span>
+            <span class="data-cell quantity-cell">{{ item.count || '—' }}</span>
+          </template>
+
           <template v-else>
             <span class="data-cell date-cell">{{ item.date }}</span>
             <span class="data-cell coords-cell">{{ item.coordinates }}</span>
@@ -85,7 +119,7 @@ const props = defineProps({
   dataType: {
     type: String,
     default: 'info', 
-    validator: (value) => ['info', 'defects', 'parameters', 'planning', 'materials', 'externalServices'].includes(value)
+    validator: (value) => ['info', 'defects', 'parameters', 'planning', 'materials', 'externalServices', 'personal', 'personnel', 'equipment', 'tools'].includes(value)
   }
 });
 
@@ -109,6 +143,12 @@ const getWarningText = () => {
       return 'Внесенные плановые материалы';
     case 'externalServices':
       return 'Внесенные услуги сторонних организаций';
+    case 'personnel':
+      return 'Внесенные исполнители';
+    case 'equipment':
+      return 'Внесенная техника';
+    case 'tools':
+      return 'Внесенные инструменты';
     default:
       return 'Внесенные осмотры/проверки';
   }
@@ -126,26 +166,15 @@ const getHeaderClass = () => {
       return 'materials-header';
     case 'externalServices':
       return 'external-services-header';
+    case 'personnel':
+      return 'personnel-header';
+    case 'equipment':
+      return 'equipment-header';
+    case 'tools':
+      return 'tools-header';
     default:
       return '';
   } 
-};
-
-const getColspan = () => {
-  switch (props.dataType) {
-    case 'defects':
-      return 4; 
-    case 'parameters':
-      return 6;
-    case 'planning':
-      return 5;
-    case 'materials':
-      return 4;
-    case 'externalServices':
-      return 3;
-    default:
-      return 3;
-  }
 };
 </script>
 
@@ -189,7 +218,7 @@ const getColspan = () => {
 
 /* --- СТИЛИ ДЛЯ ЗАГОЛОВКОВ (HEADER ROW STYLES) --- */
 /* INFO Header (Default) - Для заголовка без специального класса */
-.data-row.header-row:not(.defects-header):not(.parameters-header):not(.planning-header):not(.materials-header):not(.external-services-header) {
+.data-row.header-row:not(.defects-header):not(.parameters-header):not(.planning-header):not(.materials-header):not(.external-services-header):not(.personnel-header):not(.equipment-header):not(.tools-header) {
   grid-template-columns: 60px 140px 200px; /* № | ДАТА | КООРДИНАТЫ */
 }
 
@@ -218,6 +247,21 @@ const getColspan = () => {
   grid-template-columns: 60px 300px 100px; /* № | СЕРВИС | ОБЪЕМ */
 }
 
+/* PERSONNEL Header */
+.data-row.personnel-header {
+  grid-template-columns: 60px 220px 140px 100px; /* № | ДОЛЖНОСТЬ | КОЛ-ВО | ЧАСЫ */
+}
+
+/* EQUIPMENT Header */
+.data-row.equipment-header {
+  grid-template-columns: 60px 220px 140px 100px; /* № | ТИП ТЕХНИКИ | КОЛ-ВО | ЧАСЫ */
+}
+
+/* TOOLS Header - ИСПРАВЛЕНО: увеличены колонки для корректного отображения */
+.data-row.tools-header {
+  grid-template-columns: 60px 360px 140px; /* № | ИНСТРУМЕНТ | КОЛИЧЕСТВО */
+}
+
 /* --- ОБЩИЕ СТИЛИ ЗАГОЛОВКОВ --- */
 .data-row.header-row {
   position: sticky;
@@ -240,27 +284,22 @@ const getColspan = () => {
 
 /* DEFECTS Data Row */
 .data-row:not(.header-row):not(.empty-row):has(.defect-cell) {
-  /* Важно: эти строки содержат и date-cell, и defect-cell, но этот селектор более специфичен */
   grid-template-columns: 60px 140px 200px 200px;
   
-  /* Отображаем скрытые ячейки для этого типа */
   .date-cell, .coords-cell, .defect-cell { display: block; }
 }
 
 /* PARAMETERS Data Row */
 .data-row:not(.header-row):not(.empty-row):has(.component-cell) {
-  /* Важно: эти строки содержат и date-cell, и component-cell, но этот селектор более специфичен */
   grid-template-columns: 60px 140px 200px 150px 150px 100px;
 
-  /* Отображаем скрытые ячейки для этого типа */
   .date-cell, .coords-cell, .component-cell, .parameter-cell, .value-cell { display: block; }
 }
 
 /* PLANNING Data Row */
 .data-row:not(.header-row):not(.empty-row):has(.task-cell) {
-  grid-template-columns: 40px 230px 80px 110px 110px; /* № | ЗАДАЧА | Объем | Начало | Конец */
+  grid-template-columns: 60px 205px 80px 110px 110px; /* № | ЗАДАЧА | Объем | Начало | Конец */
 
-  /* Отображаем скрытые ячейки для этого типа */
   .task-cell, .volume-plan-cell, .start-date-plan-cell, .end-date-plan-cell { display: block; }
 }
 
@@ -268,7 +307,6 @@ const getColspan = () => {
 .data-row:not(.header-row):not(.empty-row):has(.material-cell) {
   grid-template-columns: 60px 250px 150px 100px; /* № | МАТЕРИАЛ | ЕД. ИЗМ. | ОБЪЕМ */
 
-  /* Отображаем скрытые ячейки для этого типа */
   .material-cell, .unit-cell, .volume-material-cell { display: block; }
 }
 
@@ -276,9 +314,27 @@ const getColspan = () => {
 .data-row:not(.header-row):not(.empty-row):has(.service-cell) {
   grid-template-columns: 60px 300px 100px; /* № | СЕРВИС | ОБЪЕМ */
 
-  /* Отображаем скрытые ячейки для этого типа */
   .service-cell, .volume-service-cell { display: block; }
 }
+
+/* PERSONAL Data Row */
+.data-row:not(.header-row):not(.empty-row):has(.position-cell) {
+  grid-template-columns: 60px 220px 140px 100px; /* № | ДОЛЖНОСТЬ | КОЛИЧЕСТВО | ЧАСЫ */
+  .position-cell, .quantity-cell, .hours-cell { display: block; }
+}
+
+/* EQUIPMENT Data Row */
+.data-row:not(.header-row):not(.empty-row):has(.equipment-type-cell) {
+  grid-template-columns: 60px 220px 140px 100px; /* № | ТИП ТЕХНИКИ | КОЛИЧЕСТВО | ЧАСЫ */
+  .equipment-type-cell, .quantity-cell, .hours-cell { display: block; }
+}
+
+/* TOOLS Data Row - ИСПРАВЛЕНО: такие же размеры как у personnel и equipment */
+.data-row:not(.header-row):not(.empty-row):has(.tool-type-cell) {
+  grid-template-columns: 60px 360px 140px; /* № | ИНСТРУМЕНТ | КОЛИЧЕСТВО */
+  .tool-type-cell, .quantity-cell { display: block; }
+}
+
 
 /* --- ОБЩИЕ СТИЛИ ЯЧЕЕК --- */
 .data-row:not(.header-row) {

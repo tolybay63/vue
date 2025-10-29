@@ -351,3 +351,216 @@ export async function loadResourceExternalServicesForTaskLog(taskLogId) {
     throw error;
   }
 }
+
+export async function loadPositions() {
+  try {
+    const response = await axios.post(
+      API_OBJECT_URL,
+      {
+        method: "data/loadFactorValForSelect",
+        params: ["Prop_Position"],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+
+    const records = response.data.result?.records || [];
+    return records.map((record) => ({
+      label: record.name,
+      value: record.id,
+      pv: record.pv,
+    }));
+  } catch (error) {
+    console.error("Ошибка при загрузке должностей:", error);
+    throw error;
+  }
+}
+
+export async function loadEquipmentTypes() {
+  try {
+    const response = await axios.post(
+      API_OBJECT_URL,
+      {
+        method: "data/loadFactorValForSelect",
+        params: ["Prop_TypEquipment"],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+
+    const records = response.data.result?.records || [];
+    return records.map((record) => ({
+      label: record.name,
+      value: record.id,
+      pv: record.pv,
+    }));
+  } catch (error) {
+    console.error("Ошибка при загрузке типов техники:", error);
+    throw error;
+  }
+}
+
+export async function loadToolTypes() {
+  try {
+    const response = await axios.post(
+      API_OBJECT_URL,
+      {
+        method: "data/loadFactorValForSelect",
+        params: ["Prop_TypTool"],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+
+    const records = response.data.result?.records || [];
+    return records.map((record) => ({
+      label: record.name,
+      value: record.id,
+      pv: record.pv,
+    }));
+  } catch (error) {
+    console.error("Ошибка при загрузке типов инструментов:", error);
+    throw error;
+  }
+}
+
+export async function saveResourceTool(payload) {
+  try {
+    const response = await axios.post(
+      API_REPAIR_URL,
+      {
+        method: "data/saveResourceTool",
+        params: ["ins", payload],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Ошибка при сохранении инструмента для задачи:", error);
+    throw error;
+  }
+}
+
+export async function saveResourcePersonnel(payload) {
+  try {
+    const response = await axios.post(
+      API_REPAIR_URL,
+      {
+        method: "data/saveResourcePersonnel",
+        params: ["ins", payload],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Ошибка при сохранении исполнителя для задачи:", error);
+    throw error;
+  }
+}
+
+export async function loadResourceToolsForTaskLog(taskLogId) {
+  if (!taskLogId) {
+    return [];
+  }
+  try {
+    const response = await axios.post(
+      API_REPAIR_URL,
+      {
+        method: "data/loadResourceTool",
+        params: [taskLogId],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    const records = response.data.result?.records || [];
+    return records.map(record => ({
+      ...record,
+      Quantity: record.Value, // Map Value to Quantity for consistency in the UI
+    }));
+  } catch (error) {
+    console.error("Ошибка при загрузке инструментов для задачи:", error);
+    throw error;
+  }
+}
+
+
+export async function saveResourceEquipment(payload) {
+  try {
+    const response = await axios.post(
+      API_REPAIR_URL,
+      {
+        method: "data/saveResourceEquipment",
+        params: ["ins", payload],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Ошибка при сохранении техники для задачи:", error);
+    throw error;
+  }
+}
+
+export async function loadResourcePersonnelForTaskLog(taskLogId) {
+  if (!taskLogId) {
+    return [];
+  }
+  try {
+    const response = await axios.post(
+      API_REPAIR_URL,
+      {
+        method: "data/loadResourcePersonnel",
+        params: [taskLogId],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    const records = response.data.result?.records || [];
+    return records.map(record => ({
+      namePosition: record.namePosition,
+      Quantity: record.Quantity,
+      Value: record.Value,
+    }));
+  } catch (error) {
+    console.error("Ошибка при загрузке исполнителей для задачи:", error);
+    throw error;
+  }
+}
+
+export async function loadResourceEquipmentForTaskLog(taskLogId) {
+  if (!taskLogId) {
+    return [];
+  }
+  try {
+    const response = await axios.post(
+      API_REPAIR_URL,
+      {
+        method: "data/loadResourceEquipment",
+        params: [taskLogId],
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    const records = response.data.result?.records || [];
+    return records.map(record => ({
+      nameTypEquipment: record.nameTypEquipment,
+      Quantity: record.Quantity,
+      Value: record.Value,
+    }));
+  } catch (error) {
+    console.error("Ошибка при загрузке техники для задачи:", error);
+    throw error;
+  }
+}

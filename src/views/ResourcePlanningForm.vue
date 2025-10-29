@@ -241,8 +241,9 @@ const columns = [
         };
 
         return () => h(UiButton, {
-          text: 'Завершить работу',
-          onClick: onClickHandler,
+          text: 'Завершить планирование ресурсов',
+          // onClick: onClickHandler,
+          disabled: true,
         });
       },
     },
