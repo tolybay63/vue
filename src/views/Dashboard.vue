@@ -1,58 +1,75 @@
 <template>
   <div class="dashboard-page">
-    <h1 class="page-title">Добро пожаловать в Service 360</h1>
+    <div v-if="isLoading" class="loading-overlay">
+      <div class="spinner"></div>
+      Загрузка данных...
+    </div>
+
+    <template v-else>
+    <DashboardHeader 
+      :selected-farm="selectedFarm"
+      :farms="farms"
+      :weather-temp="weatherTemp"
+      :weather-icon-name="weatherIconName"
+      :weather-icon-color="weatherIconColor"
+      :current-date="currentDate"
+      @select-farm="selectFarm"
+    />
 
     <div class="kpi-grid">
-      <KpiCard :value="kpi.newIncidents" label="Новые инциденты сегодня" />
-      <KpiCard :value="kpi.worksToday" label="Работы на сегодня" />
-      <KpiCard :value="kpi.overdueWorks" label="Просроченные работы" variant="overdue" />
-      <KpiCard :value="kpi.openIncidents" label="Всего открытых инцидентов" />
+      <KpiCard 
+        :value="kpi.newIncidents" 
+        label="Новые инциденты сегодня" 
+        :class="{ 'active-kpi': activeKpiFilter === 'newIncidents' }"
+        @click="setActiveKpi('newIncidents')"
+      />
+      <KpiCard 
+        :value="kpi.speedRestrictions" 
+        label="Ограничение скорости" 
+        :class="{ 'active-kpi': activeKpiFilter === 'speedRestrictions' }"
+        @click="setActiveKpi('speedRestrictions')"
+      />
+      <KpiCard 
+        :value="kpi.overdueWorks" 
+        label="Просроченные работы" 
+        variant="overdue" 
+        :class="{ 'active-kpi': activeKpiFilter === 'overdueWorks' }"
+        @click="setActiveKpi('overdueWorks')"
+      />
+      <KpiCard 
+        :value="kpi.openIncidents" 
+        label="Всего открытых инцидентов" 
+        :class="{ 'active-kpi': activeKpiFilter === 'openIncidents' }"
+        @click="setActiveKpi('openIncidents')"
+      />
     </div>
 
-    <div class="quick-actions">
-      <h2 class="section-title">Быстрые действия</h2>
-      <div class="actions-container">
-        <DashboardButton 
-          label="Добавить инцидент" 
-          iconName="BookOpen" 
-          iconColor="#2B6CB0"
-          @click="isAddIncidentModalOpen = true" 
-        />
-        <DashboardButton 
-          label="Запланировать работу" 
-          iconName="Calendar" 
-          iconColor="#2B6CB0"
-          @click="isPlanWorkModalOpen = true" 
-        />
-        <DashboardButton 
-          label="Журнал осмотров" 
-          iconName="ClipboardList" 
-          iconColor="#2B6CB0"
-          @click="goToWorkPlan" 
-        />
-        </div>
-    </div>
+    <RailwaySection 
+      :intermediate-stations="intermediateStations"
+      :railway-incidents="railwayIncidents"
+      :is-loading="isMapLoading"
+      @incident-click="handleIncidentClick"
+    />
+
+    <QuickActions 
+      @add-incident="isAddIncidentModalOpen = true"
+      @plan-work="isPlanWorkModalOpen = true"
+      @go-to-inspections="goToWorkPlan"
+    />
 
     <div class="main-grid">
       <div class="widget-card no-padding">
-        <CalendarWidget @date-selected="handleDateSelected" />
+        <CalendarWidget 
+          :selected-farm-id="selectedFarmId"
+          @date-selected="handleDateSelected" 
+        />
       </div>
 
-      <div class="widget-card">
-        <h2 class="section-title">{{ activityTitle }}</h2>
-        <ul class="activity-feed">
-          <li v-for="event in dayEvents" :key="event.id" class="feed-item" @dblclick.prevent="handleEventDoubleClick(event)">
-            <div class="feed-icon work">
-              <UiIcon name="ClipboardList" color="#2b6cb0" style="margin-right: 1px;" />
-            </div>
-            <div class="feed-content">
-              <p class="feed-description">{{ event.fullNameWork }}</p> 
-              <p class="feed-time" :class="{ 'overdue': isOverdue(event.PlanDateEnd) }">{{ getDaysRemainingText(event.PlanDateEnd) }}</p>
-            </div>
-          </li>
-          <li v-if="!dayEvents.length" class="feed-item-empty">На выбранную дату работ не запланировано.</li>
-        </ul>
-      </div>
+      <WorkPlanWidget
+        :activity-title="activityTitle"
+        :day-events="dayEvents"
+        @event-double-click="handleEventDoubleClick"
+      />
     </div>
 
     <ModalAddIncident
@@ -69,33 +86,55 @@
       v-if="isEditPlanModalOpen"
       :rowData="selectedEvent"
       @close="isEditPlanModalOpen = false"
-      @save="handlePlanUpdated" />
+      @save="handlePlanUpdated"
+    />
+    </template>
   </div>
 </template>
 
-<script setup>
+<script setup>  
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import DashboardButton from '@/components/ui/DashboardButton.vue';
-import UiIcon from '@/components/ui/UiIcon.vue';
+import DashboardHeader from '@/components/ui/DashboardHeader.vue';
+import QuickActions from '@/components/ui/QuickActions.vue';
+import WorkPlanWidget from '@/components/ui/WorkPlanWidget.vue';
 import ModalAddIncident from '@/modals/ModalAddIncident.vue';
 import ModalPlanWork from '@/modals/ModalPlanWork.vue';
 import ModalEditPlan from '@/modals/ModalEditPlan.vue';
 import KpiCard from '@/components/ui/KpiCard.vue';
-import { loadIncidents } from '@/api/incidentApi.js';
-import { loadWorkPlan } from '@/api/planApi.js';
 import CalendarWidget from '@/components/ui/CalendarWidget.vue';
+import { loadDepartments, loadWorkPlanForKpi, loadIncidentsForKpi } from '@/api/dashboardApi.js';
+import RailwaySection from '@/components/ui/RailwaySection.vue';
 
 const router = useRouter();
 
 const isAddIncidentModalOpen = ref(false);
 const isPlanWorkModalOpen = ref(false);
 const isEditPlanModalOpen = ref(false);
+const isLoading = ref(true);
+const isMapLoading = ref(false);
+const activeKpiFilter = ref('newIncidents');
 const selectedEvent = ref(null);
+
+const selectedFarm = ref('Все хозяйства');
+const selectedFarmId = ref(null);
+const farms = ref(['Все хозяйства']);
+const departmentsMap = ref({});
+
+const RAILWAY_TOTAL_KM = 151;
+
+const weatherTemp = ref('Загрузка...'); 
+const currentDate = ref('Загрузка...'); 
+const weatherIconName = ref('Sun');
+const weatherIconColor = ref('#f6ad55');
+
+const API_KEY = 'b68cfdf8a6b6640730e7fec49b793661'; 
+const ALMATY_TIMEZONE = 'Asia/Almaty';
+const UST_KAMENOGORSK_CITY_ID = '1520316'; 
 
 const kpi = ref({
   newIncidents: 0,
-  worksToday: 0,
+  speedRestrictions: 0,
   overdueWorks: 0,
   openIncidents: 0,
 });
@@ -103,8 +142,48 @@ const kpi = ref({
 const dayEvents = ref([]);
 const activityTitle = ref('План работ на день');
 
+const intermediateStations = ref([
+  { id: 's1', name: 'Сарыжал', position: 12.58, km: 19.2 },
+  { id: 's2', name: 'Шалабай', position: 31.26, km: 47.7 },
+  { id: 's3', name: 'Бурсак', position: 46.52, km: 70.3 },
+  { id: 's4', name: 'Екаша', position: 58.51, km: 88.4 },
+  { id: 's5', name: 'Айыртау', position: 75.83, km: 114.5 },
+  { id: 's6', name: 'Улан', position: 88.41, km: 133.7 },
+]);
+
+const railwayIncidents = ref([]); 
+
 const goToWorkPlan = () => {
   router.push({ name: 'Inspections' });
+};
+
+const selectFarm = async (farm) => {
+  selectedFarm.value = farm;
+  
+  if (farm === 'Все хозяйства') {
+    selectedFarmId.value = null;
+  } else {
+    selectedFarmId.value = departmentsMap.value[farm];
+  }
+  
+  console.log('Выбрано хозяйство:', farm, 'ID:', selectedFarmId.value);
+
+  // Загружаем KPI и обновляем карту
+  await Promise.all([
+    loadKpiData(),
+    loadRailwayIncidents(activeKpiFilter.value, selectedFarmId.value)
+  ]);
+};
+
+const setActiveKpi = async (filter) => {
+  // Если кликнули на уже активный фильтр, ничего не делаем
+  if (activeKpiFilter.value === filter) {
+    return;
+  }
+  
+  activeKpiFilter.value = filter;
+  // Обновляем только данные на карте
+  await loadRailwayIncidents(filter, selectedFarmId.value);
 };
 
 const formatDateToString = (date) => {
@@ -116,39 +195,90 @@ const formatDateToString = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-const getDaysRemainingText = (planDateEnd) => {
-  if (!planDateEnd) return '';
+const mapOpenWeatherIcon = (iconCode) => {
+  const map = {
+    '01d': { name: 'Sun', color: '#f6ad55' },
+    '01n': { name: 'Moon', color: '#63b3ed' },
+    '02d': { name: 'CloudSun', color: '#ecc94b' },
+    '02n': { name: 'CloudMoon', color: '#a0aec0' },
+    '03d': { name: 'Cloud', color: '#718096' },
+    '03n': { name: 'Cloud', color: '#718096' },
+    '04d': { name: 'CloudDrizzle', color: '#4a5568' },
+    '04n': { name: 'CloudDrizzle', color: '#4a5568' },
+    '09d': { name: 'CloudRain', color: '#63b3ed' },
+    '09n': { name: 'CloudRain', color: '#63b3ed' },
+    '10d': { name: 'CloudRain', color: '#63b3ed' },
+    '10n': { name: 'CloudRain', color: '#63b3ed' },
+    '11d': { name: 'CloudLightning', color: '#9f7aea' },
+    '11n': { name: 'CloudLightning', color: '#9f7aea' },
+    '13d': { name: 'CloudSnow', color: '#e2e8f0' },
+    '13n': { name: 'CloudSnow', color: '#e2e8f0' },
+    '50d': { name: 'Mist', color: '#a0aec0' },
+    '50n': { name: 'Mist', color: '#a0aec0' },
+  };
+  return map[iconCode] || { name: 'Sun', color: '#f6ad55' };
+};
 
-  const endDate = new Date(planDateEnd.split('T')[0]);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+const fetchWeather = async () => {
+  if (!API_KEY) {
+    weatherTemp.value = 'Нет API ключа';
+    weatherIconName.value = 'AlertCircle';
+    weatherIconColor.value = '#c53030';
+    return;
+  }
+  
+  const url = `https://api.openweathermap.org/data/2.5/weather?id=${UST_KAMENOGORSK_CITY_ID}&appid=${API_KEY}&units=metric&lang=ru`;
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    
+    const temp = Math.round(data.main.temp);
+    const iconCode = data.weather[0].icon;
 
-  const diffTime = endDate.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-  if (diffDays < 0) {
-    return `Просрочено на ${Math.abs(diffDays)} дн.`;
-  } else if (diffDays === 0) {
-    return 'Завершается сегодня';
-  } else {
-    const lastDigit = diffDays % 10;
-    const lastTwoDigits = diffDays % 100;
-    if (lastTwoDigits >= 11 && lastTwoDigits <= 19) return `Осталось ${diffDays} дней`;
-    if (lastDigit === 1) return `Осталось ${diffDays} день`;
-    if ([2, 3, 4].includes(lastDigit)) return `Осталось ${diffDays} дня`;
-    return `Осталось ${diffDays} дней`;
+    weatherTemp.value = `${temp}°C`;
+    const iconMapping = mapOpenWeatherIcon(iconCode);
+    weatherIconName.value = iconMapping.name;
+    weatherIconColor.value = iconMapping.color;
+  } catch (error) {
+    console.error("Ошибка при получении погоды:", error);
+    weatherTemp.value = '—°C';
+    weatherIconName.value = 'AlertCircle';
+    weatherIconColor.value = '#c53030';
   }
 };
 
-const isOverdue = (planDateEnd) => {
-  if (!planDateEnd) return false;
+const fetchAlmatyDate = () => {
+  try {
+    const options = {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: ALMATY_TIMEZONE,
+    };
+    const nowInAlmaty = new Date().toLocaleDateString('ru-RU', options);
+    currentDate.value = nowInAlmaty;
+  } catch (error) {
+    console.error("Ошибка при получении даты:", error);
+    currentDate.value = 'Дата недоступна';
+  }
+};
 
-  const endDate = new Date(planDateEnd.split('T')[0]);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const diffTime = endDate.getTime() - today.getTime();
-  return diffTime < 0;
+const fetchFarms = async () => {
+  try {
+    const departments = await loadDepartments();
+    
+    const depsMap = {};
+    departments.forEach(dep => {
+      depsMap[dep.name] = dep.id;
+    });
+    departmentsMap.value = depsMap;
+    
+    farms.value = ['Все хозяйства', ...departments.map(dep => dep.name)];
+  } catch (error) {
+    console.error("Не удалось загрузить список хозяйств:", error);
+  }
 };
 
 const loadKpiData = async () => {
@@ -156,28 +286,110 @@ const loadKpiData = async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayStr = formatDateToString(today);
-    const periodTypeToday = 71;
-    const periodTypeAll = 11;
 
-    const [incidentsToday, worksToday, allWorks, allIncidents] = await Promise.all([
-      loadIncidents(todayStr, periodTypeToday),
-      loadWorkPlan(todayStr, periodTypeToday),
-      loadWorkPlan(todayStr, periodTypeAll),
-      loadIncidents(todayStr, periodTypeAll)
+    const objLocationParam = selectedFarmId.value;
+
+    // Новые инциденты сегодня: periodType=71, без status и event
+    const newIncidentsPromise = loadIncidentsForKpi(todayStr, 71, objLocationParam, null, null);
+
+    // Ограничение скорости: periodType=11, event=1157
+    const speedRestrictionsPromise = loadIncidentsForKpi(todayStr, 11, objLocationParam, null, 1157);
+
+    // Всего открытых инцидентов: periodType=11, status=1
+    const openIncidentsPromise = loadIncidentsForKpi(todayStr, 11, objLocationParam, 1, null);
+
+    // Просроченные работы
+    const allWorksPromise = loadWorkPlanForKpi(todayStr, null, objLocationParam);
+
+    const [newIncidents, speedRestrictions, openIncidents, allWorks] = await Promise.all([
+      newIncidentsPromise,
+      speedRestrictionsPromise,
+      openIncidentsPromise,
+      allWorksPromise
     ]);
 
-    kpi.value.newIncidents = incidentsToday.length;
-    kpi.value.worksToday = worksToday.length;
-    kpi.value.openIncidents = allIncidents.length;
-
-    const overdue = allWorks.filter(work => {
-      const planDate = new Date(work.PlanDateEnd.split('T')[0]);
-      return planDate < today;
-    });
-    kpi.value.overdueWorks = overdue.length;
-
+    kpi.value.newIncidents = newIncidents.length;
+    kpi.value.speedRestrictions = speedRestrictions.length;
+    kpi.value.openIncidents = openIncidents.length;
+    kpi.value.overdueWorks = allWorks.length;
   } catch (error) {
-    console.error("Ошибка при загрузке данных для KPI:", error);
+    console.error("Ошибка при загрузке KPI:", error);
+  }
+};
+
+const processIncidents = (rawIncidents, forcedColor = null) => {
+  return rawIncidents.map(incident => {
+    const startKmValue = (incident.StartKm || 0) + (incident.StartPicket / 10 || 0);
+    const position = (startKmValue / RAILWAY_TOTAL_KM) * 100;
+
+    let color;
+    if (forcedColor) {
+      color = forcedColor;
+    } else {
+      // Логика по умолчанию, если цвет не задан принудительно
+      const statusName = incident.nameStatus ? incident.nameStatus.toLowerCase() : '';
+      if (statusName.includes('зарегистрирован')) color = 'red-marker'; 
+      else if (statusName.includes('в работе')) color = 'yellow-marker'; 
+      else if (statusName.includes('завершен') || statusName.includes('закрыт')) color = 'green-marker';
+      else color = 'red-marker'; // Цвет по умолчанию
+    }
+    
+    // Для просроченных работ используем fullNameWork в качестве описания
+    const description = incident.fullNameWork || incident.Description || incident.name;
+    // Добавляем fullNameWork в rawData, чтобы он был доступен в тултипе
+    const rawData = { ...incident, Description: description };
+
+    const title = `${incident.nameCls}: ${description} (${startKmValue.toFixed(2)}км)`;
+
+    return {
+      id: incident.id,
+      position: position,
+      color: color,
+      title: title,
+      km: startKmValue,
+      rawData: rawData,
+    };
+  });
+};
+
+const loadRailwayIncidents = async (filter, farmId) => {
+  isMapLoading.value = true;
+  try {
+    let rawIncidents = [];
+    let color = null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = formatDateToString(today);
+
+    switch (filter) {
+      case 'newIncidents':
+        rawIncidents = await loadIncidentsForKpi(todayStr, 71, farmId, null, null);
+        color = 'red-marker';
+        break;
+      case 'speedRestrictions':
+        rawIncidents = await loadIncidentsForKpi(todayStr, 11, farmId, null, 1157);
+        color = 'orange-marker';
+        break;
+      case 'overdueWorks':
+        rawIncidents = await loadWorkPlanForKpi(todayStr, null, farmId);
+        color = 'purple-marker';
+        break;
+      case 'openIncidents':
+        rawIncidents = await loadIncidentsForKpi(todayStr, 11, farmId, 1, null);
+        color = 'red-marker';
+        break;
+      default:
+        // По умолчанию загружаем новые инциденты
+        rawIncidents = await loadIncidentsForKpi(todayStr, 71, farmId, null, null);
+        color = 'red-marker';
+    }
+
+    railwayIncidents.value = processIncidents(rawIncidents, color);
+  } catch (error) {
+    console.error("Ошибка при загрузке инцидентов:", error);
+    railwayIncidents.value = [];
+  } finally {
+    isMapLoading.value = false;
   }
 };
 
@@ -193,18 +405,26 @@ const handleDateSelected = async (dateStr) => {
   }
 
   try {
-    const works = await loadWorkPlan(dateStr, 71);
+    // Используем periodType 71 для выбранной даты
+    const works = await loadWorkPlanForKpi(dateStr, 71, selectedFarmId.value);
     dayEvents.value = works;
   } catch (error) {
-    console.error(`Ошибка при загрузке работ на ${dateStr}:`, error);
+    console.error(`Ошибка при загрузке работ:`, error);
     dayEvents.value = [];
   }
 };
 
 const refreshData = () => {
-  loadKpiData();
-  const todayStr = formatDateToString(new Date());
-  handleDateSelected(todayStr);
+  isLoading.value = true;
+  Promise.all([
+    loadKpiData(),
+    loadRailwayIncidents(activeKpiFilter.value, selectedFarmId.value),
+    handleDateSelected(formatDateToString(new Date())),
+    fetchWeather(),
+    fetchAlmatyDate()
+  ]).finally(() => {
+    isLoading.value = false;
+  });
 };
 
 const handleEventDoubleClick = (event) => {
@@ -228,8 +448,14 @@ const handlePlanUpdated = () => {
   refreshData();
 };
 
+const handleIncidentClick = (incident) => {
+  console.log('Clicked incident:', incident);
+};
+
 onMounted(() => {
-  loadKpiData();
+  fetchFarms().then(() => {
+    refreshData();
+  });
 });
 </script>
 
@@ -239,34 +465,15 @@ onMounted(() => {
   background: #f7fafc;
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden; 
   font-family: system-ui;
-}
-.page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: #1a202c;
-  margin-bottom: 24px;
-}
-.section-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #2d3748;
-  margin-bottom: 16px;
 }
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
   gap: 24px;
   margin-bottom: 32px;
-}
-
-.quick-actions {
-  margin-bottom: 32px;
-}
-.actions-container {
-  display: flex;
-  gap: 16px;
 }
 
 .main-grid {
@@ -274,91 +481,47 @@ onMounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 24px;
 }
+
 .widget-card {
   background: white;
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  max-width: 100%; /* Гарантирует, что карточка не превысит ширину своего контейнера */
-  overflow-x: auto; /* Позволяет горизонтальную прокрутку внутри карточки, если содержимое слишком широкое */
+  max-width: 100%;
+  overflow-x: auto;
 }
+
 .widget-card.no-padding {
   padding: 0;
 }
 
-.activity-feed {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.feed-item {
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.9);
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 12px 12px;
-  /* Добавьте это для предотвращения выделения текста при двойном клике */
-  -webkit-user-select: none; /* Safari */
-  -moz-user-select: none;    /* Firefox */
-  -ms-user-select: none;     /* IE10+ */
-  user-select: none;         /* Standard */
-}
-.feed-item:not(:last-child) {
-  border-bottom: 1px solid #e2e8f0;
-}
-.feed-icon {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-}
-.feed-icon.incident {
-  background-color: #fed7d7;
-  color: #c53030;
-}
-.feed-icon.work {
-  background-color: #c3dafe;
-  color: #2c5282;
-}
-.feed-icon .icon {
-  width: 18px;
-  height: 18px;
-  margin-right: 0;
-}
-.feed-item:hover {
-  background-color: #f7fafc;
-  border-radius: 8px;
+  z-index: 1000;
+  font-size: 16px;
+  color: #4a5568;
+  gap: 16px;
 }
 
-.feed-content {
-  flex-grow: 1;
-}
-.feed-description {
-  font-size: 14px;
-  color: #2d3748;
-  margin: 0 0 4px;
-}
-.feed-time {
-  font-size: 12px;
-  color: #a0aec0;
-  margin: 0;
-}
-.feed-time.overdue {
-  color: #c53030;
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e2e8f0;
+  border-top-color: #3182ce;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
-.feed-item-empty {
-  font-size: 14px;
-  color: #718096;
-  padding: 16px 0;
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
-
-@media (max-width: 480px) {
-  .main-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 </style>
