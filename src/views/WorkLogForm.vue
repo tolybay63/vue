@@ -24,6 +24,7 @@
         icon="wrench"
         :items="recordData.tools"
         :is-active="activeTab === 'tools'"
+        is-tool
         @click="setActiveTab('tools')"
       />
       <ResourceCard
@@ -31,6 +32,7 @@
         icon="truck"
         :items="recordData.equipment"
         :is-active="activeTab === 'equipment'"
+        is-equipment
         @click="setActiveTab('equipment')"
       />
       <ResourceCard
@@ -71,10 +73,13 @@
           :rows="recordData.tools"
           :nameOptions="toolNameOptions"
           :unitOptions="unitOptions"
+          :is-tool="true"
           @update:rows="recordData.tools = $event"
           @save-row="handleSaveRow"
           @delete-row="handleDeleteRow"
           @add-row="handleAddToolRow"
+          @save-resource="handleSaveResource"
+          @delete-resource="handleDeleteResource"
         />
         <ResourceEditTable
           v-else-if="recordData && activeTab === 'equipment'"
@@ -83,10 +88,13 @@
           :rows="recordData.equipment"
           :nameOptions="equipmentNameOptions"
           :unitOptions="unitOptions"
+          :is-equipment="true"
           @update:rows="recordData.equipment = $event"
           @save-row="handleSaveRow"
           @delete-row="handleDeleteRow"
           @add-row="handleAddEquipmentRow"
+          @save-resource="handleSaveResource"
+          @delete-resource="handleDeleteResource"
         />
         <ResourceEditTable
           v-else-if="recordData && activeTab === 'services'"
@@ -94,7 +102,6 @@
           title="Услуги"
           :rows="recordData.services"
           :nameOptions="serviceNameOptions"
-          :unitOptions="unitOptions"
           @update:rows="recordData.services = $event"
           @save-row="handleSaveRow"
           @delete-row="handleDeleteRow"
@@ -112,6 +119,9 @@
           @update:rows="recordData.performers = $event"
           @save-row="handleSaveRow"
           @delete-row="handleDeleteRow"
+          @save-performer="handleSavePerformer"
+          @delete-performer="handleDeletePerformer"
+          @add-performer="handleAddPerformer"
         />
       </Transition>
     </div>
@@ -130,7 +140,8 @@ import BackButton from '@/components/ui/BackButton.vue';
 import ResourceCard from '@/components/ui/ResourceCard.vue';
 import ResourceEditTable from '@/components/ui/ResourceEditTable.vue';
 import ResourceInfoSection from '@/components/ui/ResourceInfoSection.vue';
-import { loadObjTaskLog, saveResourceFact, saveServiceFact } from '@/api/executionApi.js';
+import { loadObjTaskLog, saveResourceFact, saveServiceFact, addResourceMaterial, addResourceTpService, saveComplexPersonnel, deleteComplexPersonnel } from '@/api/executionApi.js';
+import { loadMaterials, loadUnits, loadExternalServices } from '@/api/repairApi.js';
 import { useNotificationStore } from '@/stores/notificationStore';
 
 const router = useRouter();
@@ -141,6 +152,9 @@ const isLoading = ref(true);
 const workLogId = ref(route.params.id);
 const activeTab = ref('materials');
 const notificationStore = useNotificationStore();
+
+const materialNameOptions = ref([]);
+const unitOptions = ref([]);
 
 const setActiveTab = (tab) => {
   activeTab.value = tab;
@@ -155,23 +169,18 @@ const getFormattedDate = (date = new Date()) => {
 };
 
 const handleSaveRow = async ({ row }) => {
-  // TODO: Заменить на получение реальных данных пользователя
-  const user = { id: 1003, pv: 1087 };
-
   const payload = {
     id: row.id,
     idValue: row.idValue,
     Value: row.fact,
     idUser: row.idUser,
-    objUser: user.id,
-    pvUser: user.pv,
     idUpdatedAt: row.idUpdatedAt,
     UpdatedAt: getFormattedDate(),
   };
 
-  try {
-    let apiMethod, successMsg, errorMsg, errorLog;
+  let apiMethod, successMsg, errorMsg, errorLog;
 
+  try {
     if (activeTab.value === 'materials') {
       apiMethod = saveResourceFact;
       successMsg = 'Факт по материалу успешно сохранен!';
@@ -182,22 +191,157 @@ const handleSaveRow = async ({ row }) => {
       successMsg = 'Факт по услуге успешно сохранен!';
       errorMsg = 'Ошибка при сохранении факта по услуге.';
       errorLog = 'Ошибка сохранения факта по услуге:';
+    } else {
+      return;
     }
 
-    await apiMethod(payload);
+    const response = await apiMethod(payload);
     notificationStore.showNotification(successMsg, 'success');
     await loadWorkLogData(workLogId.value);
   } catch (error) {
-    notificationStore.showNotification(errorMsg, 'error');
+    const serverError = error.response?.data?.error?.message || error.message;
+    notificationStore.showNotification(`${errorMsg} ${serverError}`, 'error');
     console.error(errorLog, error);
   }
 };
 
+// --- Обработчики для исполнителей ---
+
+const handleSavePerformer = async ({ rowId, performer, performerIndex }) => {
+  try {
+    const performerData = {
+      objPerformer: performer.id,
+      pvPerformer: performer.pv,
+      PerformerValue: performer.time,
+      isNew: performer.isNew,
+    };
+
+    // Для существующих исполнителей добавляем дополнительные поля
+    if (!performer.isNew) {
+      performerData.idPerformer = performer.idPerformer;
+      performerData.idPerformerValue = performer.idPerformerValue;
+    }
+
+    await saveComplexPersonnel(rowId, performerData);
+
+    notificationStore.showNotification('Данные исполнителя успешно сохранены!', 'success');
+
+    // Перезагружаем данные с сервера
+    // Watcher в ResourceEditTable автоматически сохранит несохраненных исполнителей
+    await loadWorkLogData(workLogId.value);
+  } catch (error) {
+    notificationStore.showNotification('Ошибка при сохранении данных исполнителя.', 'error');
+    console.error('Ошибка сохранения исполнителя:', error);
+  }
+};
+
+const handleDeletePerformer = async ({ performer }) => {
+  try {
+    const complexId = performer.complexId;
+
+    if (!complexId) {
+      throw new Error('ID комплекса не найден');
+    }
+
+    await deleteComplexPersonnel(complexId);
+
+    notificationStore.showNotification('Исполнитель успешно удален!', 'success');
+
+    // Перезагружаем данные для обновления списка
+    await loadWorkLogData(workLogId.value);
+  } catch (error) {
+    notificationStore.showNotification('Ошибка при удалении исполнителя.', 'error');
+    console.error('Ошибка удаления исполнителя:', error);
+  }
+};
+
+const handleAddPerformer = async () => {
+  try {
+    // TODO: Реализовать API для массового добавления исполнителей
+    notificationStore.showNotification('Исполнители успешно добавлены!', 'success');
+    await loadWorkLogData(workLogId.value);
+  } catch (error) {
+    notificationStore.showNotification('Ошибка при добавлении исполнителей.', 'error');
+    console.error('Ошибка добавления исполнителей:', error);
+  }
+};
+
+// --- Обработчики для инструментов и техники ---
+
+const handleSaveResource = async ({ rowId, detail, detailIndex, resourceType }) => {
+  try {
+    // TODO: Реализовать API для сохранения деталей инструмента/техники
+    const resourceName = resourceType === 'tool' ? 'инструмента' : 'техники';
+
+    console.log(`Сохранение ${resourceName}:`, { rowId, detail, detailIndex, resourceType });
+
+    notificationStore.showNotification(`Данные ${resourceName} успешно сохранены!`, 'success');
+
+    // Перезагружаем данные с сервера
+    await loadWorkLogData(workLogId.value);
+  } catch (error) {
+    const resourceName = resourceType === 'tool' ? 'инструмента' : 'техники';
+    notificationStore.showNotification(`Ошибка при сохранении данных ${resourceName}.`, 'error');
+    console.error(`Ошибка сохранения ${resourceName}:`, error);
+  }
+};
+
+const handleDeleteResource = async ({ detail, resourceType }) => {
+  try {
+    // TODO: Реализовать API для удаления деталей инструмента/техники
+    const resourceName = resourceType === 'tool' ? 'Инструмент' : 'Техника';
+
+    console.log(`Удаление ${resourceName}:`, { detail, resourceType });
+
+    notificationStore.showNotification(`${resourceName} успешно удален!`, 'success');
+
+    // Перезагружаем данные для обновления списка
+    await loadWorkLogData(workLogId.value);
+  } catch (error) {
+    const resourceName = resourceType === 'tool' ? 'инструмента' : 'техники';
+    notificationStore.showNotification(`Ошибка при удалении ${resourceName}.`, 'error');
+    console.error(`Ошибка удаления ${resourceName}:`, error);
+  }
+};
+
+// --- Обработчики для добавления ресурсов ---
+
 const handleAddMaterialRow = async (newRowData) => {
   try {
-    // TODO: Здесь должен быть вызов API для добавления нового материала
-    // const response = await addMaterial(workLogId.value, newRowData);
-    
+    if (!recordData.value?.taskLogCls) {
+      throw new Error('Не найдены данные задачи');
+    }
+
+    console.log('Данные для добавления материала (newRowData):', newRowData);
+    console.log('Справочник материалов:', materialNameOptions.value);
+    console.log('Справочник единиц измерения:', unitOptions.value);
+
+    const materialId = newRowData.name?.value;
+    const unitId = newRowData.unit?.value;
+
+    const selectedMaterial = materialNameOptions.value.find(m => m.value === materialId);
+    const selectedUnit = unitOptions.value.find(u => u.value === unitId);
+
+    if (!selectedMaterial || !selectedUnit) {
+      if (!selectedMaterial) console.error('Материал с ID', materialId, 'не найден в справочнике materialNameOptions.');
+      if (!selectedUnit) console.error('Единица измерения с ID', unitId, 'не найдена в справочнике unitOptions.');
+      throw new Error('Материал или единица измерения не найдены');
+    }
+
+    const materialData = {
+      objMaterial: selectedMaterial.value,
+      pvMaterial: selectedMaterial.pv,
+      meaMeasure: selectedUnit.value,
+      pvMeasure: selectedUnit.pv,
+      Value: newRowData.fact || 0,
+    };
+
+    await addResourceMaterial(
+      materialData, 
+      workLogId.value, 
+      recordData.value.taskLogCls
+    );
+
     notificationStore.showNotification('Материал успешно добавлен!', 'success');
     await loadWorkLogData(workLogId.value);
   } catch (error) {
@@ -209,6 +353,7 @@ const handleAddMaterialRow = async (newRowData) => {
 const handleAddToolRow = async (newRowData) => {
   try {
     // TODO: Здесь должен быть вызов API для добавления нового инструмента
+    console.log('Добавление инструмента:', newRowData);
     notificationStore.showNotification('Инструмент успешно добавлен!', 'success');
     await loadWorkLogData(workLogId.value);
   } catch (error) {
@@ -220,6 +365,7 @@ const handleAddToolRow = async (newRowData) => {
 const handleAddEquipmentRow = async (newRowData) => {
   try {
     // TODO: Здесь должен быть вызов API для добавления новой техники
+    console.log('Добавление техники:', newRowData);
     notificationStore.showNotification('Техника успешно добавлена!', 'success');
     await loadWorkLogData(workLogId.value);
   } catch (error) {
@@ -230,7 +376,34 @@ const handleAddEquipmentRow = async (newRowData) => {
 
 const handleAddServiceRow = async (newRowData) => {
   try {
-    // TODO: Здесь должен быть вызов API для добавления новой услуги
+    if (!recordData.value?.taskLogCls) {
+      throw new Error('Не найдены данные задачи');
+    }
+
+    console.log('Данные для добавления услуги (newRowData):', newRowData);
+    console.log('Справочник услуг:', serviceNameOptions.value);
+
+    const serviceId = newRowData.name?.value;
+
+    const selectedService = serviceNameOptions.value.find(s => s.value === serviceId);
+
+    if (!selectedService) {
+      console.error('Услуга с ID', serviceId, 'не найдена в справочнике serviceNameOptions.');
+      throw new Error('Услуга не найдена');
+    }
+
+    const serviceData = {
+      objTpService: selectedService.value,
+      pvTpService: selectedService.pv,
+      Value: newRowData.fact || 0,
+    };
+
+    await addResourceTpService(
+      serviceData,
+      workLogId.value,
+      recordData.value.taskLogCls
+    );
+
     notificationStore.showNotification('Услуга успешно добавлена!', 'success');
     await loadWorkLogData(workLogId.value);
   } catch (error) {
@@ -276,6 +449,8 @@ const loadWorkLogData = async (id) => {
     }
 
     recordData.value = {
+      taskLogPv: data.pv,
+      taskLogCls: data.cls,
       taskName: data.fullNameTask || '-',
       volume: data.ValuePlan !== null ? data.ValuePlan : '-',
       startDate: formatDate(data.PlanDateStart),
@@ -291,60 +466,133 @@ const loadWorkLogData = async (id) => {
       
       materials: (data.material || []).map(item => ({
         id: item.id,
-        name: item.nameMaterial,
+        name: item.objMaterial,
+        name_text: item.nameMaterial,
         plan: item.ValuePlan,
         fact: item.Value,
-        unit: item.nameMeasure,
+        unit: item.meaMeasure,
+        unit_text: item.nameMeasure,
         idValue: item.idValue,
         idUser: item.idUser,
         idUpdatedAt: item.idUpdatedAt,
       })),
-      services: (data.tpService || []).map(item => ({
-        id: item.id,
-        name: item.nameTpService,
-        plan: item.ValuePlan,
-        fact: item.Value || 0,
-        unit: 'ед.',
-        idValue: item.idValue,
-        idUser: item.idUser,
-        idUpdatedAt: item.idUpdatedAt,
-        Value: item.Value, // Добавляем факт из tpService
-      })),
+      services: (data.tpService || []).map(item => {
+        // Извлекаем единицу измерения из fullNameTpService (часть после запятой)
+        const fullName = item.fullNameTpService || item.nameTpService || '';
+        const parts = fullName.split(',');
+        const unit = parts.length > 1 ? parts[1].trim() : 'ед.';
+        const serviceName = parts[0].trim() || item.nameTpService;
+
+        return {
+          id: item.id,
+          name: serviceName,
+          plan: item.ValuePlan,
+          fact: item.Value || 0,
+          unit: unit,
+          idValue: item.idValue,
+          idUser: item.idUser,
+          idUpdatedAt: item.idUpdatedAt,
+        };
+      }),
       tools: (data.tool || []).map(item => ({
+        id: item.id,
         name: item.nameTypTool,
-        plan: item.Value,
-        unit: 'шт',
+        planCount: item.Value || 0,      // Value - это количество для инструментов
+        factCount: 0,                     // TODO: Получать из фактических данных
+        toolDetails: [],                  // TODO: Получать детали по конкретным единицам инструмента
+        typToolPv: item.pvTypTool || null,
       })),
       equipment: (data.equipment || []).map(item => ({
+        id: item.id,
         name: item.nameTypEquipment,
-        plan: item.Quantity,
-        hours: item.Value,
+        planCount: item.Quantity || 0,    // Планируемое количество
+        planHours: item.Value || 0,        // Планируемые часы
+        factCount: 0,                      // TODO: Получать из фактических данных
+        factHours: 0,                      // TODO: Получать из фактических данных
+        equipmentDetails: [],              // TODO: Получать детали по конкретным единицам техники
+        typEquipmentPv: item.pvTypEquipment || null,
       })),
       performers: (data.personnel || []).map(item => ({
+        id: item.id,
         name: item.namePosition,
         plan: item.Quantity,
         hours: item.Value,
+        performerDetails: (item.complex || []).map(complexItem => ({
+          complexId: complexItem.idPerformerComplex, // ID комплекса для удаления
+          id: complexItem.objPerformer,
+          pv: complexItem.pvPerformer,
+          fullName: complexItem.fullNamePerformer,
+          time: complexItem.PerformerValue || 0,
+          idPerformer: complexItem.idPerformer,
+          idPerformerValue: complexItem.idPerformerValue,
+          isNew: false, // Это существующий исполнитель
+        })),
+        positionPv: item.pvPosition || item.pv, // PV позиции для загрузки исполнителей
       })),
     };
   } catch (error) {
     console.error('Ошибка загрузки данных:', error);
+    notificationStore.showNotification('Ошибка загрузки данных', 'error');
   } finally {
     isLoading.value = false;
   }
 };
 
+// Загрузка справочников
+const loadDropdownOptions = async () => {
+  try {
+    const [materials, units, services] = await Promise.all([
+      loadMaterials(),
+      loadUnits(),
+      loadExternalServices()
+    ]);
+
+    materialNameOptions.value = materials;
+    unitOptions.value = units;
+    serviceNameOptions.value = services;
+  } catch (error) {
+    console.error('Ошибка загрузки справочников:', error);
+    notificationStore.showNotification('Ошибка загрузки справочников', 'error');
+  }
+};
+
 // Mock data for dropdowns in ResourceEditTable
-const materialNameOptions = ref([]);
-const toolNameOptions = ref([]);
-const equipmentNameOptions = ref([]);
+const toolNameOptions = ref([
+  { value: 'hammer', label: 'Молоток' },
+  { value: 'drill', label: 'Дрель' },
+  { value: 'saw', label: 'Пила' },
+]);
+
+const equipmentNameOptions = ref([
+  { value: 'excavator', label: 'Экскаватор' },
+  { value: 'bulldozer', label: 'Бульдозер' },
+  { value: 'crane', label: 'Кран' },
+]);
+
 const serviceNameOptions = ref([]);
-const performerNameOptions = ref([]);
-const unitOptions = ref([]);
-const performerUnitOptions = ref([]);
 
+const performerNameOptions = ref([
+  { value: 'foreman', label: 'Бригадир' },
+  { value: 'worker', label: 'Рабочий' },
+  { value: 'engineer', label: 'Инженер' },
+]);
 
-onMounted(() => {
-  loadWorkLogData(workLogId.value);
+const performerUnitOptions = ref([
+  { value: 'person', label: 'чел.' },
+]);
+
+// Опции для дропдауна исполнителей (ФИО конкретных людей)
+const performerNameOptionsForDropdown = ref([
+  { value: 'ivanov', label: 'Иванов Иван Иванович' },
+  { value: 'petrov', label: 'Петров Петр Петрович' },
+  { value: 'sidorov', label: 'Сидоров Сидор Сидорович' },
+  { value: 'kuznetsov', label: 'Кузнецов Алексей Михайлович' },
+  { value: 'smirnov', label: 'Смирнов Дмитрий Александрович' },
+]);
+
+onMounted(async () => {
+  await loadDropdownOptions();
+  await loadWorkLogData(workLogId.value);
 });
 </script>
 
@@ -413,7 +661,6 @@ onMounted(() => {
 .fade-table-leave-to {
   opacity: 0;
 }
-
 
 @keyframes spin {
   to { transform: rotate(360deg); }

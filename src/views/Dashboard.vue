@@ -6,48 +6,63 @@
     </div>
 
     <template v-else>
-    <DashboardHeader 
+    <DashboardHeader
       :selected-farm="selectedFarm"
       :farms="farms"
-      :weather-temp="weatherTemp"
-      :weather-icon-name="weatherIconName"
-      :weather-icon-color="weatherIconColor"
-      :current-date="currentDate"
+      :is-railway-status-open="isRailwayStatusOpen"
+      :railway-view-mode="railwayViewMode"
       @select-farm="selectFarm"
+      @toggle-railway-status="toggleRailwayStatus"
+      @switch-to-width="switchToWidthMode"
+      @switch-to-status="switchToStatusMode"
+      @switch-to-skew="switchToSkewMode"
+    />
+
+    <RailwaySectionStatus
+      v-if="isRailwayStatusOpen"
+      :key="railwayViewMode"
+      :intermediate-stations="intermediateStations"
+      :status-segments="railwayStatusSegments"
+      :mode="railwayViewMode"
+      :is-loading="isRailwayModeChanging"
     />
 
     <div class="kpi-grid">
-      <KpiCard 
-        :value="kpi.newIncidents" 
-        label="Новые инциденты сегодня" 
+      <KpiCard
+        :value="kpi.newIncidents"
+        :monthly-value="kpiMonthly.newIncidents"
+        label="Новые запросы на сегодня"
         :class="{ 'active-kpi': activeKpiFilter === 'newIncidents' }"
         @click="setActiveKpi('newIncidents')"
       />
-      <KpiCard 
-        :value="kpi.speedRestrictions" 
-        label="Ограничение скорости" 
+      <KpiCard
+        :value="kpi.speedRestrictions"
+        :monthly-value="kpiMonthly.speedRestrictions"
+        label="Ограничение скорости"
         :class="{ 'active-kpi': activeKpiFilter === 'speedRestrictions' }"
         @click="setActiveKpi('speedRestrictions')"
       />
-      <KpiCard 
-        :value="kpi.overdueWorks" 
-        label="Просроченные работы" 
-        variant="overdue" 
+      <KpiCard
+        :value="kpi.overdueWorks"
+        label="Просроченные работы"
+        variant="overdue"
         :class="{ 'active-kpi': activeKpiFilter === 'overdueWorks' }"
         @click="setActiveKpi('overdueWorks')"
       />
-      <KpiCard 
-        :value="kpi.openIncidents" 
-        label="Всего открытых инцидентов" 
+      <KpiCard
+        :value="kpi.openIncidents"
+        :monthly-value="kpiMonthly.openIncidents"
+        label="Всего открытых запросов"
         :class="{ 'active-kpi': activeKpiFilter === 'openIncidents' }"
         @click="setActiveKpi('openIncidents')"
       />
     </div>
 
-    <RailwaySection 
+    <RailwaySection
       :intermediate-stations="intermediateStations"
       :railway-incidents="railwayIncidents"
       :is-loading="isMapLoading"
+      :active-kpi-filter="activeKpiFilter"
       @incident-click="handleIncidentClick"
     />
 
@@ -103,8 +118,9 @@ import ModalPlanWork from '@/modals/ModalPlanWork.vue';
 import ModalEditPlan from '@/modals/ModalEditPlan.vue';
 import KpiCard from '@/components/ui/KpiCard.vue';
 import CalendarWidget from '@/components/ui/CalendarWidget.vue';
-import { loadDepartments, loadWorkPlanForKpi, loadIncidentsForKpi } from '@/api/dashboardApi.js';
+import { loadDepartments, loadWorkPlanForKpi, loadIncidentsForKpi, loadRailwayStatus, loadRailwaySkewData, loadSizeIncidentOfMonth } from '@/api/dashboardApi.js';
 import RailwaySection from '@/components/ui/RailwaySection.vue';
+import RailwaySectionStatus from '@/components/ui/RailwaySectionStatus.vue';
 
 const router = useRouter();
 
@@ -113,8 +129,12 @@ const isPlanWorkModalOpen = ref(false);
 const isEditPlanModalOpen = ref(false);
 const isLoading = ref(true);
 const isMapLoading = ref(false);
+const isRailwayModeChanging = ref(false);
+const selectedDate = ref(null); // Добавим ref для хранения выбранной даты
 const activeKpiFilter = ref('newIncidents');
 const selectedEvent = ref(null);
+const isRailwayStatusOpen = ref(false);
+const railwayViewMode = ref('status'); // 'status', 'width' или 'skew'
 
 const selectedFarm = ref('Все хозяйства');
 const selectedFarmId = ref(null);
@@ -123,19 +143,18 @@ const departmentsMap = ref({});
 
 const RAILWAY_TOTAL_KM = 151;
 
-const weatherTemp = ref('Загрузка...'); 
-const currentDate = ref('Загрузка...'); 
-const weatherIconName = ref('Sun');
-const weatherIconColor = ref('#f6ad55');
-
-const API_KEY = 'b68cfdf8a6b6640730e7fec49b793661'; 
-const ALMATY_TIMEZONE = 'Asia/Almaty';
-const UST_KAMENOGORSK_CITY_ID = '1520316'; 
+ 
 
 const kpi = ref({
   newIncidents: 0,
   speedRestrictions: 0,
   overdueWorks: 0,
+  openIncidents: 0,
+});
+
+const kpiMonthly = ref({
+  newIncidents: 0,
+  speedRestrictions: 0,
   openIncidents: 0,
 });
 
@@ -151,7 +170,8 @@ const intermediateStations = ref([
   { id: 's6', name: 'Улан', position: 88.41, km: 133.7 },
 ]);
 
-const railwayIncidents = ref([]); 
+const railwayIncidents = ref([]);
+const railwayStatusSegments = ref([]);
 
 const goToWorkPlan = () => {
   router.push({ name: 'Inspections' });
@@ -165,14 +185,16 @@ const selectFarm = async (farm) => {
   } else {
     selectedFarmId.value = departmentsMap.value[farm];
   }
-  
-  console.log('Выбрано хозяйство:', farm, 'ID:', selectedFarmId.value);
 
   // Загружаем KPI и обновляем карту
   await Promise.all([
     loadKpiData(),
-    loadRailwayIncidents(activeKpiFilter.value, selectedFarmId.value)
+    loadRailwayIncidents(activeKpiFilter.value, selectedFarmId.value),
   ]);
+
+  // Обновляем план работ для новой фермы, используя текущую выбранную дату
+  const dateToRefresh = selectedDate.value ? formatDateToString(selectedDate.value) : formatDateToString(new Date());
+  await handleDateSelected(dateToRefresh);
 };
 
 const setActiveKpi = async (filter) => {
@@ -193,76 +215,6 @@ const formatDateToString = (date) => {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-};
-
-const mapOpenWeatherIcon = (iconCode) => {
-  const map = {
-    '01d': { name: 'Sun', color: '#f6ad55' },
-    '01n': { name: 'Moon', color: '#63b3ed' },
-    '02d': { name: 'CloudSun', color: '#ecc94b' },
-    '02n': { name: 'CloudMoon', color: '#a0aec0' },
-    '03d': { name: 'Cloud', color: '#718096' },
-    '03n': { name: 'Cloud', color: '#718096' },
-    '04d': { name: 'CloudDrizzle', color: '#4a5568' },
-    '04n': { name: 'CloudDrizzle', color: '#4a5568' },
-    '09d': { name: 'CloudRain', color: '#63b3ed' },
-    '09n': { name: 'CloudRain', color: '#63b3ed' },
-    '10d': { name: 'CloudRain', color: '#63b3ed' },
-    '10n': { name: 'CloudRain', color: '#63b3ed' },
-    '11d': { name: 'CloudLightning', color: '#9f7aea' },
-    '11n': { name: 'CloudLightning', color: '#9f7aea' },
-    '13d': { name: 'CloudSnow', color: '#e2e8f0' },
-    '13n': { name: 'CloudSnow', color: '#e2e8f0' },
-    '50d': { name: 'Mist', color: '#a0aec0' },
-    '50n': { name: 'Mist', color: '#a0aec0' },
-  };
-  return map[iconCode] || { name: 'Sun', color: '#f6ad55' };
-};
-
-const fetchWeather = async () => {
-  if (!API_KEY) {
-    weatherTemp.value = 'Нет API ключа';
-    weatherIconName.value = 'AlertCircle';
-    weatherIconColor.value = '#c53030';
-    return;
-  }
-  
-  const url = `https://api.openweathermap.org/data/2.5/weather?id=${UST_KAMENOGORSK_CITY_ID}&appid=${API_KEY}&units=metric&lang=ru`;
-  
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    const data = await response.json();
-    
-    const temp = Math.round(data.main.temp);
-    const iconCode = data.weather[0].icon;
-
-    weatherTemp.value = `${temp}°C`;
-    const iconMapping = mapOpenWeatherIcon(iconCode);
-    weatherIconName.value = iconMapping.name;
-    weatherIconColor.value = iconMapping.color;
-  } catch (error) {
-    console.error("Ошибка при получении погоды:", error);
-    weatherTemp.value = '—°C';
-    weatherIconName.value = 'AlertCircle';
-    weatherIconColor.value = '#c53030';
-  }
-};
-
-const fetchAlmatyDate = () => {
-  try {
-    const options = {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: ALMATY_TIMEZONE,
-    };
-    const nowInAlmaty = new Date().toLocaleDateString('ru-RU', options);
-    currentDate.value = nowInAlmaty;
-  } catch (error) {
-    console.error("Ошибка при получении даты:", error);
-    currentDate.value = 'Дата недоступна';
-  }
 };
 
 const fetchFarms = async () => {
@@ -301,17 +253,29 @@ const loadKpiData = async () => {
     // Просроченные работы
     const allWorksPromise = loadWorkPlanForKpi(todayStr, null, objLocationParam);
 
-    const [newIncidents, speedRestrictions, openIncidents, allWorks] = await Promise.all([
+    // Месячные данные
+    const newIncidentsMonthlyPromise = loadSizeIncidentOfMonth(objLocationParam, null, null);
+    const speedRestrictionsMonthlyPromise = loadSizeIncidentOfMonth(objLocationParam, 1157, null);
+    const openIncidentsMonthlyPromise = loadSizeIncidentOfMonth(objLocationParam, null, 1);
+
+    const [newIncidents, speedRestrictions, openIncidents, allWorks, newIncidentsMonthly, speedRestrictionsMonthly, openIncidentsMonthly] = await Promise.all([
       newIncidentsPromise,
       speedRestrictionsPromise,
       openIncidentsPromise,
-      allWorksPromise
+      allWorksPromise,
+      newIncidentsMonthlyPromise,
+      speedRestrictionsMonthlyPromise,
+      openIncidentsMonthlyPromise
     ]);
 
     kpi.value.newIncidents = newIncidents.length;
     kpi.value.speedRestrictions = speedRestrictions.length;
     kpi.value.openIncidents = openIncidents.length;
     kpi.value.overdueWorks = allWorks.length;
+
+    kpiMonthly.value.newIncidents = newIncidentsMonthly;
+    kpiMonthly.value.speedRestrictions = speedRestrictionsMonthly;
+    kpiMonthly.value.openIncidents = openIncidentsMonthly;
   } catch (error) {
     console.error("Ошибка при загрузке KPI:", error);
   }
@@ -334,9 +298,9 @@ const processIncidents = (rawIncidents, forcedColor = null) => {
       else color = 'red-marker'; // Цвет по умолчанию
     }
     
-    // Для просроченных работ используем fullNameWork в качестве описания
-    const description = incident.fullNameWork || incident.Description || incident.name;
-    // Добавляем fullNameWork в rawData, чтобы он был доступен в тултипе
+
+    const description = incident.Description || incident.fullNameWork;
+
     const rawData = { ...incident, Description: description };
 
     const title = `${incident.nameCls}: ${description} (${startKmValue.toFixed(2)}км)`;
@@ -394,6 +358,7 @@ const loadRailwayIncidents = async (filter, farmId) => {
 };
 
 const handleDateSelected = async (dateStr) => {
+  selectedDate.value = new Date(dateStr); // Сохраняем выбранную дату
   const date = new Date(dateStr);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -401,7 +366,7 @@ const handleDateSelected = async (dateStr) => {
   if (date.getTime() === today.getTime()) {
     activityTitle.value = 'План работ на сегодня';
   } else {
-    activityTitle.value = `План работ на ${date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}`;
+    activityTitle.value = `Работы на ${date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}`;
   }
 
   try {
@@ -414,14 +379,31 @@ const handleDateSelected = async (dateStr) => {
   }
 };
 
+const loadRailwayStatusData = async (mode = 'status') => {
+  try {
+    if (mode === 'skew') {
+      // Для режима перекосов загружаем все 4 типа отклонений
+      const skewData = await loadRailwaySkewData(null);
+      railwayStatusSegments.value = skewData;
+    } else {
+      // Для режимов оценки и ширины используем старый метод
+      const relobj = mode === 'width' ? 1700 : 2525;
+      const statusData = await loadRailwayStatus(null, relobj);
+      railwayStatusSegments.value = statusData;
+    }
+  } catch (error) {
+    console.error('Ошибка при загрузке статуса пути:', error);
+    railwayStatusSegments.value = [];
+  }
+};
+
 const refreshData = () => {
   isLoading.value = true;
   Promise.all([
     loadKpiData(),
     loadRailwayIncidents(activeKpiFilter.value, selectedFarmId.value),
-    handleDateSelected(formatDateToString(new Date())),
-    fetchWeather(),
-    fetchAlmatyDate()
+    loadRailwayStatusData(),
+    handleDateSelected(formatDateToString(new Date()))
   ]).finally(() => {
     isLoading.value = false;
   });
@@ -450,6 +432,52 @@ const handlePlanUpdated = () => {
 
 const handleIncidentClick = (incident) => {
   console.log('Clicked incident:', incident);
+};
+
+const toggleRailwayStatus = () => {
+  isRailwayStatusOpen.value = !isRailwayStatusOpen.value;
+};
+
+const switchToWidthMode = async () => {
+  // Если уже в режиме ширины и открыт, то закрываем
+  if (railwayViewMode.value === 'width' && isRailwayStatusOpen.value) {
+    isRailwayStatusOpen.value = false;
+    return;
+  }
+
+  isRailwayModeChanging.value = true;
+  railwayViewMode.value = 'width';
+  isRailwayStatusOpen.value = true;
+  await loadRailwayStatusData('width');
+  isRailwayModeChanging.value = false;
+};
+
+const switchToStatusMode = async () => {
+  // Если уже в режиме оценки и открыт, то закрываем
+  if (railwayViewMode.value === 'status' && isRailwayStatusOpen.value) {
+    isRailwayStatusOpen.value = false;
+    return;
+  }
+
+  isRailwayModeChanging.value = true;
+  railwayViewMode.value = 'status';
+  isRailwayStatusOpen.value = true;
+  await loadRailwayStatusData('status');
+  isRailwayModeChanging.value = false;
+};
+
+const switchToSkewMode = async () => {
+  // Если уже в режиме перекосов и открыт, то закрываем
+  if (railwayViewMode.value === 'skew' && isRailwayStatusOpen.value) {
+    isRailwayStatusOpen.value = false;
+    return;
+  }
+
+  isRailwayModeChanging.value = true;
+  railwayViewMode.value = 'skew';
+  isRailwayStatusOpen.value = true;
+  await loadRailwayStatusData('skew');
+  isRailwayModeChanging.value = false;
 };
 
 onMounted(() => {
